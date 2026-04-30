@@ -148,6 +148,7 @@ const float MAX_ANGLES[JOINT_NUM] = {
 
 extern const float DEFAULT_JOINT_SPEEDS[JOINT_NUM];
 extern const float DEFAULT_JOINT_ACCELS[JOINT_NUM];
+extern const float ENCODER_OFFSETS[JOINT_NUM];
 
 // ─────────────────────────────────────────────────────────────
 // DERIVED VALUES (optional for calculations)
