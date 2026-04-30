@@ -15,6 +15,7 @@ void Encoder::init(){
 }
 
 float Encoder::getAngle(){
+  selectMuxChannel();
   return _encoder.angleRead();
 }
 
