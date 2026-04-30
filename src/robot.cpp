@@ -13,7 +13,6 @@ const DHParam dh_table[JOINT_NUM] = {
 #define MAX_DEFAULT_SPEED 1.0f
 #define MAX_DEFAULT_ACCELERATION 5.0f
 
-
 Robot::Robot()
   : _moving(false),
     _enabled(false),
@@ -86,14 +85,18 @@ void Robot::update(){
   // Computes pose error vect (rotation via rotation matrix)
   Vect6f err = computeTaskError(_current_pose, _goal_pose);
 
+  // Calculate position error
+  float pos_err_norm = sqrt(err.v[0]*err.v[0] + err.v[1]*err.v[1] + err.v[2]*err.v[2]);
+  
   // Construct the desired control via error
-  float Kp = 0.9f;
+  float Kp = 1.5f;
   float Kr = 0.3f;
-  Vect6f x_dot;
+  float Kr_scaled = Kr * (1.0f / (1.0f + pos_err_norm));
 
+  Vect6f x_dot; 
   for (int i = 0; i < 3; i++) {
     x_dot.v[i]     = Kp * err.v[i];
-    x_dot.v[i + 3] = Kr * err.v[i + 3];
+    x_dot.v[i + 3] = Kr_scaled * err.v[i + 3];
   }
 
   // Get the actual q_dot
@@ -106,12 +109,9 @@ void Robot::update(){
       //_q_dot[i] = 0.8f * _q_dot_prev[i] + 0.2f * _q_dot[i];
     }
   }
-  
-  // Calculate position error
-  float err_norm = sqrt(err.v[0]*err.v[0] + err.v[1]*err.v[1] + err.v[2]*err.v[2]);
 
   // Not really a good solution as orientation can still be wrong especially if we only move joint 5
-  if (err_norm < 0.25f) {   // adjust threshold
+  if (pos_err_norm < 1.0f) {   // adjust threshold
     for (int i = 0; i < JOINT_NUM; i++) {
         _joints[i].setTargetSpeed(0);
     }
