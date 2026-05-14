@@ -1,4 +1,4 @@
-#include "communication.h"
+#include "interface.h"
 
 ComHandler::ComHandler(HardwareSerial &s)
   : stream(s) { }

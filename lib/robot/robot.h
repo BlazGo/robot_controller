@@ -18,6 +18,12 @@ struct DHParam {
 
 extern const DHParam dh_table[JOINT_NUM];
 
+enum control_mode_t {
+  CARTESIAN_CONTROL,
+  JOINT_CONTROL
+};
+
+
 // all angular variables should be defined in radians
 // all cartesian longitudinal variables should be defined in meters
 class Robot
@@ -30,6 +36,7 @@ class Robot
     void enableJoints(void);
     void disableJoints(void);
     bool setMotionControlParadigm(motion_control_paradigm_t motion_control_paradigm);
+    bool setMotionControlMode(control_mode_t motion_control_mode);
     const bool isMoving(void) const;
     void printInfo();
 
@@ -57,19 +64,22 @@ class Robot
     uint8_t _enable_pin0;
     uint8_t _enable_pin1;
     motion_control_paradigm_t _motion_control_paradigm;
+    control_mode_t _control_mode;
 
     Matrix4x4 _curr_cart_pose_Mat;
     Matrix3x3 _curr_rot_Mat;
     Matrix6x6 _curr_jacobian;
     Vect3f _curr_eul_angles_Vect;
 
-    float _q_dot[6];
+    float last_time;
+    float _q_dot[JOINT_NUM];
     Vect6f _current_pose;
     Vect6f _goal_pose;
     Vect6f _task_velocity;
     Vect6f _task_err;
 
     float _curr_joint_angles[JOINT_NUM];
+    float _target_joint_angles[JOINT_NUM];
     float _max_joint_angles[JOINT_NUM];
     float _min_joint_angles[JOINT_NUM];
 

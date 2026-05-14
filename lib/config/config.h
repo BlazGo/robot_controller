@@ -6,7 +6,7 @@
 // Choose which MCU you are using (Only pick one) TODO: better selection...
 #define WEACT_RP2350B 1
 #define WEACT_STM32H5 0
-#define RP2040 0
+#define RP2040 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
