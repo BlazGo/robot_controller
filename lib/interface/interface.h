@@ -2,8 +2,10 @@
 #define INTERFACE_H
 
 #include <Arduino.h>
+#include "config.h"
 
-#define MAX_MSG_LEN 128
+#define MAX_MSG_REC_LEN 128
+#define MAX_MSG_SEND_LEN 128
 #define MAX_PARAMS 6
 
 typedef enum{
@@ -56,15 +58,17 @@ class ComHandler {
         
         void begin(unsigned long baud = 115200);  // init serial
         void update();                            // call in loop()
+        void sendJointStates(const float* q);
+
         bool cmdReady = false;
         cmd_robot_t cmd_robot;
+
     private:
         HardwareSerial &stream;
 
-        char receivedChars[MAX_MSG_LEN];
         uint8_t ndx = 0;
+        char receivedChars[MAX_MSG_REC_LEN];
         bool receiving = false;
-
         char START_CHAR = '<';
         char END_CHAR   = '>';
         const char* SEPARATOR  = ",";

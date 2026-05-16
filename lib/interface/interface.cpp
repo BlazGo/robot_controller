@@ -35,7 +35,7 @@ void ComHandler::update() {
     }
 
     // Store character safely
-    if (ndx < MAX_MSG_LEN - 1){
+    if (ndx < MAX_MSG_REC_LEN - 1){
       receivedChars[ndx++] = latest_char;
     }
     else{
@@ -48,7 +48,7 @@ void ComHandler::update() {
 }
 
 bool ComHandler::parseMessage(){
-  char tempChars[MAX_MSG_LEN];      // temporary array used for parsing
+  char tempChars[MAX_MSG_REC_LEN];      // temporary array used for parsing
 
   strcpy(tempChars, receivedChars); // Copy into new variable to not destroy OG
 
@@ -88,4 +88,12 @@ bool ComHandler::parseMessage(){
     return false;
   }
   return true;
+}
+
+void ComHandler::sendJointStates(const float* q){
+  char buffer[MAX_MSG_SEND_LEN];
+
+  snprintf(buffer, sizeof(buffer), "<CURR_JOINT_ANGLES,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f>", q[0], q[1], q[2], q[3], q[4], q[5]);
+
+  stream.println(buffer);
 }
