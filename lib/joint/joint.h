@@ -50,6 +50,7 @@ class Joint {
 
     void init(void);
     void update(void);
+    void updateState(void);
     bool isMoving(void);
     void stop(void);
 
@@ -80,6 +81,7 @@ class Joint {
     float clampAngleRad(float angle_rad);
 
     void checkLimits(void);
+    float safeVelLimitsBased(void);
 };
 
 #endif

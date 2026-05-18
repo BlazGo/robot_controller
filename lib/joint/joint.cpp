@@ -34,13 +34,41 @@ void Joint::init() {
 
 void Joint::update(void) {
   // Refresh current state
+
+  Joint::updateState();
+  Joint::checkLimits();
+
+  float safe_vel = Joint::safeVelLimitsBased();
+  float commanded_vel = safe_vel; // Later to be replaced by trapezoidal generator or similar (if even)
+  
+  _motor.setTargetSpeed(angleVelRadToStepsPerSec(commanded_vel));
+  _motor.update();
+
+  Joint::updateState();
+}
+
+void Joint::updateState(void){
   _jointState.angle_rad = stepsToAngleRad(_motor.getCurrPosition());
   _jointState.angle_vel_rad_s = stepsPerSecToAngleVelRad(_motor.getCurrSpeed());
   _jointState.moving = _motor.isMoving();
+}
 
-  Joint::checkLimits();
+void Joint::checkLimits(void){
+  _jointState.at_min_lim = (_jointState.angle_rad <= _jointConfig.min_position);
+  _jointState.at_max_lim = (_jointState.angle_rad >= _jointConfig.max_position);
+}
 
-  _motor.update();
+float Joint::safeVelLimitsBased(void){
+  float safeVel = _jointState.target_angle_vel_rad_s;
+
+  if (_jointState.at_min_lim && safeVel < 0.0f) {
+    safeVel = 0.0f;
+  }
+
+  if (_jointState.at_max_lim && safeVel > 0.0f) {
+    safeVel = 0.0f;
+  } 
+  return safeVel;
 }
 
 bool Joint::isMoving(void){
@@ -129,15 +157,4 @@ float Joint::angleAccelRadToStepsPerSec2(float angle_rad_s2) const {
   return (angle_rad_s2 / (2.0f * PI)) * static_cast<float>(_jointConfig.steps_per_joint_rev);
 }
 
-void Joint::checkLimits(void){
-  _jointState.at_min_lim = (_jointState.angle_rad <= _jointConfig.min_position);
-  _jointState.at_max_lim = (_jointState.angle_rad >= _jointConfig.max_position);
 
-  if (_jointState.at_min_lim && _jointState.target_angle_vel_rad_s < 0.0f){
-    Joint::setTargetSpeed(0.0f);
-  }
-
-  if (_jointState.at_max_lim && _jointState.target_angle_vel_rad_s > 0.0f){
-    Joint::setTargetSpeed(0.0f);
-  }
-}
