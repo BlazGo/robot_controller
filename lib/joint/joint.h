@@ -12,15 +12,15 @@ enum joint_motion_control_paradigm_t {
 
 struct JointConfig {
   // Usually static and does not change during runtime
-  float min_position;
-  float max_position;
+  float min_angle_rad;
+  float max_angle_rad;
 
-  float max_speed;
-  float max_acceleration;
+  float max_angle_vel_rad_s;
+  float max_angle_acc_rad_s2;
 
   float gear_ratio;
-  long steps_per_joint_rev;
-  float position_tolerance;
+  long motor_steps_per_joint_rev;
+  float angle_tolerance_rad;
 };
 
 struct JointState {
@@ -81,7 +81,9 @@ class Joint {
     float clampAngleRad(float angle_rad);
 
     void checkLimits(void);
-    float safeVelLimitsBased(void);
+    float applyLimitSafetyToVelRadS(float commanded_angle_vel_rad_s);
+    float computePositionControlVelRadS(void);
+    float computeSpeedControlVelRadS(void);
 };
 
 #endif

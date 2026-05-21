@@ -1,126 +1,111 @@
 #include "motor.h"
 #include "utils.h"
 
-#define SPEED_EPS 0.01f
 
-Motor::Motor(uint8_t step_pin, uint8_t dir_pin, uint8_t microsteps)
-  : _step_pin(step_pin),
-    _dir_pin(dir_pin),
-    _microsteps(microsteps),
-    _stepper(AccelStepper::DRIVER, step_pin, dir_pin)
+Motor::Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps)
+:   _lastUpdateUs(0U),
+    _config{},
+    _state{},
+    _stepper(AccelStepper::DRIVER, stepPin, directionPin)
 {
+    _config.stepPin = stepPin;
+    _config.directionPin = directionPin;
+    _config.microsteps = (microsteps < 1U) ? 1U : microsteps;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Public functions
-// ─────────────────────────────────────────────────────────────
+void Motor::initialize() {
+    setCurrentPositionSteps(0);
+    _state.currentSpeedSteps = _stepper.speed();
+    _state.targetSpeedSteps = _state.currentSpeedSteps;
+    _state.isMoving = _stepper.isRunning();
 
-void Motor::init() {  
-  _curr_position = _stepper.currentPosition();
-  _curr_speed = _stepper.speed();
-  _target_speed = 0.0f;
-  _max_speed = 500;
-  _max_acceleration = 100;
-  
-  _steps_per_rev = FULL_STEPS_PER_REV * static_cast<long>(_microsteps);
+    _config.stepsPerRevolution = STEPPER_STEPS_PER_REV * static_cast<long>(_config.microsteps);
 
-  setMaxSpeed(500);
-  setMaxAcceleration(100);
-  _last_update_us = micros();
-  _is_moving = false;
+    setMaxSpeedSteps(MAX_SPEED_STEPS_PER_S);
+    setMaxAccelerationSteps(MAX_ACCELERATION_STEPS_PER_S2);
+
+    _lastUpdateUs = micros();
 }
 
 void Motor::update() {
-  // Update the time
-  const uint32_t now_us = micros();
-  // Get elapsed time from the last update
-  const uint32_t dt_us = now_us - _last_update_us;
-  // And save the new time as the old time
-  _last_update_us = now_us;
+    const uint32_t nowUs = micros();
+    const uint32_t deltaTimeUs = nowUs - _lastUpdateUs;
+    _lastUpdateUs = nowUs;
 
-  // convert to [s] from [ms] for proper calculations
-  const float dt_s = static_cast<float>(dt_us) * 1.0e-6f;
+    float deltaTimeSeconds = static_cast<float>(deltaTimeUs) * 1.0e-6f;
+    deltaTimeSeconds = clampAbsFloat(deltaTimeSeconds, 0.001f);
 
-  float max_delta = _max_acceleration * dt_s;
-  _target_speed = clampAbsFloat(_target_speed, _max_speed);
-  _curr_speed = moveTowards(_curr_speed, _target_speed, max_delta);
+    float maxSpeedDelta = _config.maxAccelerationSteps * deltaTimeSeconds;
+    _state.currentSpeedSteps = moveTowards(
+        _state.currentSpeedSteps,
+        _state.targetSpeedSteps,
+        maxSpeedDelta
+    );
 
-  _stepper.setSpeed(_curr_speed);
-  _stepper.runSpeed();
+    _stepper.setSpeed(_state.currentSpeedSteps);
+    _stepper.runSpeed();
 
-  _curr_position = _stepper.currentPosition();
-
-  _is_moving = (fabsf(_curr_speed) > SPEED_EPS);
+    _state.currentPositionSteps = _stepper.currentPosition();
+    _state.isMoving = (fabsf(_state.currentSpeedSteps) > kSpeedEpsilon);
 }
 
 bool Motor::isMoving(void) const {
-  return _is_moving;
+    return _state.isMoving;
 }
 
-void Motor::setCurrPosition(long curr_position){
-  _stepper.setCurrentPosition(curr_position);
-  _curr_position = curr_position;
+void Motor::setCurrentPositionSteps(long currentPosition) {
+    _stepper.setCurrentPosition(currentPosition);
+    _state.currentPositionSteps = currentPosition;
 }
 
-void Motor::setTargetSpeed(float target_speed){
-  _target_speed = target_speed;
+void Motor::setTargetSpeedSteps(float targetSpeed) {
+    _state.targetSpeedSteps = clampAbsFloat(targetSpeed, _config.maxSpeedSteps);
 }
 
-void Motor::setMaxSpeed(float max_speed){
-  // force it positive since it's a limit not a direction/quantity
-  if (max_speed < 0.0f){
-    max_speed = -max_speed;
-  }
-  _stepper.setMaxSpeed(max_speed);
-  _max_speed = max_speed;
+void Motor::setMaxSpeedSteps(float maxSpeed) {
+    if (maxSpeed < 0.0f) {
+        maxSpeed = -maxSpeed;
+    }
+
+    _stepper.setMaxSpeed(maxSpeed);
+    _config.maxSpeedSteps = maxSpeed;
 }
 
-void Motor::setMaxAcceleration(float max_acceleration){
-  // force it positive
-  if (max_acceleration < 0.0f){
-    max_acceleration = -max_acceleration;
-  }
-  // Not used with only speed control we manually accelerate
-  // _stepper.setAcceleration(max_acceleration);
-  _max_acceleration = max_acceleration;
+void Motor::setMaxAccelerationSteps(float maxAcceleration) {
+    if (maxAcceleration < 0.0f) {
+        maxAcceleration = -maxAcceleration;
+    }
+
+    _config.maxAccelerationSteps = maxAcceleration;
 }
 
-long Motor::getCurrPosition(void) const {
-  return _curr_position;
+long Motor::getCurrentPositionSteps(void) const {
+    return _state.currentPositionSteps;
 }
 
-float Motor::getCurrSpeed(void) const {
-  return _curr_speed;
+float Motor::getCurrentSpeedSteps(void) const {
+    return _state.currentSpeedSteps;
 }
 
-float Motor::getMaxSpeed(void) const {
-  return _max_speed;
+float Motor::getMaxSpeedSteps(void) const {
+    return _config.maxSpeedSteps;
 }
 
-float Motor::getMaxAcceleration(void) const {
-  return _max_acceleration;
+float Motor::getMaxAccelerationSteps(void) const {
+    return _config.maxAccelerationSteps;
 }
 
-void Motor::stop(void){
-  setTargetSpeed(0);
+void Motor::stop(void) {
+    setTargetSpeedSteps(0);
 }
 
 void Motor::emergencyStop(void) {
-  _target_speed = 0.0f;
-  _curr_speed = 0.0f;
-  _stepper.setSpeed(0.0f);
-  _is_moving = false;
+    _state.targetSpeedSteps = 0.0f;
+    _state.currentSpeedSteps = 0.0f;
+    _stepper.setSpeed(0.0f);
+    _state.isMoving = false;
 }
 
-long Motor::getStepsPerRev(void) const {
-  return _steps_per_rev;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Private functions
-// ─────────────────────────────────────────────────────────────
-
-void Motor::setCurrSpeed(float curr_speed){
-  _stepper.setSpeed(curr_speed);
-  _curr_speed = curr_speed;
+long Motor::getStepsPerRevolution(void) const {
+    return _config.stepsPerRevolution;
 }
