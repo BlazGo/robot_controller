@@ -27,7 +27,7 @@ Joint::Joint(uint8_t step_pin, uint8_t dir_pin, uint8_t microsteps, float gear_r
 void Joint::init() {
   _motor.initialize();
   _jointConfig.motor_steps_per_joint_rev  = _jointConfig.gear_ratio * _motor.getStepsPerRevolution();
-  _jointState.joint_motion_control_paradigm = SPEED_CONTROL;
+  _jointState.joint_motion_control_paradigm = JOINT_SPEED_CONTROL;
   _jointConfig.angle_tolerance_rad = 0.005f;
 }
 
@@ -39,11 +39,11 @@ void Joint::update(void) {
   
   switch (_jointState.joint_motion_control_paradigm)
   {
-  case SPEED_CONTROL:
+  case JOINT_SPEED_CONTROL:
     commanded_angle_vel_rad_s = computeSpeedControlVelRadS();
     break;
 
-  case POSITION_CONTROL:
+  case JOINT_POSITION_CONTROL:
     commanded_angle_vel_rad_s = computePositionControlVelRadS();
     break;
   
@@ -58,9 +58,6 @@ void Joint::update(void) {
    // Send the desired speed and update motor
   _motor.setTargetSpeedSteps(angleVelRadToStepsPerSec(commanded_angle_vel_rad_s));
   _motor.update();
-
-  Joint::updateState();
-  Joint::checkLimits();
 }
 
 float Joint::computeSpeedControlVelRadS(void){
@@ -110,14 +107,14 @@ bool Joint::isMoving(void){
 void Joint::moveToAngle(float angle){
   angle = clampAngleRad(angle);
   _jointState.target_angle_rad = angle;
-  _jointState.joint_motion_control_paradigm = POSITION_CONTROL;
+  _jointState.joint_motion_control_paradigm = JOINT_POSITION_CONTROL;
 }
 
 void Joint::setTargetSpeed(float angular_speed){
   angular_speed = clampAbsFloat(angular_speed, _jointConfig.max_angle_vel_rad_s);
   
   _jointState.target_angle_vel_rad_s = angular_speed;
-  _jointState.joint_motion_control_paradigm = SPEED_CONTROL;
+  _jointState.joint_motion_control_paradigm = JOINT_SPEED_CONTROL;
 }
 
 void Joint::setMaxSpeed(float max_angular_speed){
