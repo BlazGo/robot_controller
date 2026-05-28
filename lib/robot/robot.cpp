@@ -1,25 +1,9 @@
 #include "robot.h"
 #include "utils.h"
 
-const DHParam dh_table[JOINT_NUM] = {
-  { 0.0f,     -PI / 2.0f, 102.0f,  0.0f   },  // joint 0
-  { -PI/2.0f, 0.0f,       0.0f,    210.0f },  // joint 1
-  { 0.0f,     -PI / 2.0f, 0.0f,    0.0f   },  // joint 2
-  { 0.0f,     PI / 2.0f,  202.0f,  0.0f   },  // joint 3
-  { PI,       PI / 2.0f,  0.0f,    0.0f   },  // joint 4
-  { 0.0f,     0.0f,       43.5f,   0.0f   }   // joint 5
-};
-
-#define MAX_DEFAULT_SPEED 1.0f
-#define MAX_DEFAULT_ACCELERATION 5.0f
-#define ANGLE_RAD_POSITION_TOLERANCE 0.01f
-
 Robot::Robot()
-  : _moving(false),
-    _enabled(false),
-    _enable_pin0(ENABLE_PIN_0),
-    _enable_pin1(ENABLE_PIN_1),
-    _control_mode(CARTESIAN_CONTROL),
+: _enable_pin0(ENABLE_PIN_0),
+  _enable_pin1(ENABLE_PIN_1),
   _joints {Joint(STEP_PIN_0, DIR_PIN_0, MICROSTEPS_0, GEAR_RATIO_0, MIN_ANGLE_0, MAX_ANGLE_0),
            Joint(STEP_PIN_1, DIR_PIN_1, MICROSTEPS_1, GEAR_RATIO_1, MIN_ANGLE_1, MAX_ANGLE_1),
            Joint(STEP_PIN_2, DIR_PIN_2, MICROSTEPS_2, GEAR_RATIO_2, MIN_ANGLE_2, MAX_ANGLE_2),
@@ -28,219 +12,162 @@ Robot::Robot()
            Joint(STEP_PIN_5, DIR_PIN_5, MICROSTEPS_5, GEAR_RATIO_5, MIN_ANGLE_5, MAX_ANGLE_5)
            }
 {
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
+
   for (int i = 0; i < JOINT_NUM; i++) {
-    _curr_joint_angles[i] = 0.0f;
-    _max_joint_angles[i] = ((PI/2) - 0.1f);
-    _min_joint_angles[i] = -((PI/2) - 0.1f);
-
-    _curr_joint_speeds[i] = 0.0f;
-    _max_joint_speeds[i] = MAX_DEFAULT_SPEED;
-
-    _curr_joint_accels[i] = 0.0f;
-    _max_joint_accels[i] = MAX_DEFAULT_ACCELERATION;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Public functions
-// ─────────────────────────────────────────────────────────────
-
-void Robot::init(){
-  for (int i=0; i<JOINT_NUM; i++){
     _joints[i].init();
-    _joints[i].setMaxAcceleration(DEFAULT_JOINT_ACCELS[i]);
-    _joints[i].setMaxSpeed(DEFAULT_JOINT_SPEEDS[i]);
-    _curr_joint_angles[i] = _joints[i].getAngle();
+    _joints[i].setMotionControlParadigm(JOINT_SPEED_CONTROL);
+    _joints[i].setTargetSpeed(0.0f);
   }
+  Robot::setMaxJointSpeed((float*)DEFAULT_JOINT_SPEEDS);
+  Robot::setMaxJointAcceleration((float*)DEFAULT_JOINT_ACCELS);}
+
+void Robot::init() {
   pinMode(_enable_pin0, OUTPUT);
   pinMode(_enable_pin1, OUTPUT);
-  disableJoints();  
-  
-  Matrix4x4 T_matrices[JOINT_NUM + 1];
-  computeForwardKinematics(_curr_joint_angles, T_matrices);
-  _curr_cart_pose_Mat = T_matrices[JOINT_NUM];
-  currCartPoseFromT();
 
-  for (int i=0; i<6; i++){
-    _goal_pose.v[i] = _current_pose.v[i];
-  }
-
-  setMotionControlParadigm(SPEED_CONTROL);
-
+  Robot::disable();
   last_time = micros();
 }
 
-void Robot::update(){
-  float t_step = (micros() - last_time) * 10e-6;
+void Robot::update() {
+  // Loop timing
+  float dt = (micros() - last_time) / 1000000.0;
   last_time = micros();
-
-  // Executes motor moves, updates positions and checks if robot is moving
-  updateJointStates();
+  
+  Robot::updateJointStates();
 
   // Calculate EE pose from T transform matrices
   Matrix4x4 T_matrices[JOINT_NUM + 1];
-  computeForwardKinematics(_curr_joint_angles, T_matrices);
-  // Extract the last pose as current EE pose
-  _curr_cart_pose_Mat = T_matrices[JOINT_NUM];
-  // Calculates rot matrix and constructs cart and euler angles vector
-  currCartPoseFromT();
+  computeForwardKinematics(_robotState.q, T_matrices);
 
-  // Computes pose error vect (rotation via rotation matrix)
-  Vect6f err = computeTaskError(_current_pose, _goal_pose);
+  // Extract the data
+  _robotState.T_EE = T_matrices[JOINT_NUM];
+  _robotState.x[0] = _robotState.T_EE.m[0][3];
+  _robotState.x[1] = _robotState.T_EE.m[1][3];
+  _robotState.x[2] = _robotState.T_EE.m[2][3];
+  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(_robotState.T_EE);
+  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
+  _robotState.x[3] = _temp_eul.v[0];
+  _robotState.x[4] = _temp_eul.v[1];
+  _robotState.x[5] = _temp_eul.v[2];
 
-  // Calculate position error
-  float err_norm = sqrt(err.v[0]*err.v[0] +
-                        err.v[1]*err.v[1] +
-                        err.v[2]*err.v[2]);
+  float q_calc[JOINT_NUM] = {0.0f};
 
-  float ori_err = sqrt(err.v[3]*err.v[3] +
-                      err.v[4]*err.v[4] +
-                      err.v[5]*err.v[5]);
+  switch (_robotState.robot_motion_control_paradigm)
+  {
+  case robot_motion_control_paradigm_t::ROBOT_CART_CONTROL:
+    Matrix6x6 Jg;
+    computeGeometricJacobian(T_matrices, Jg);
 
-  switch (_control_mode) {
-    case CARTESIAN_CONTROL: {
-      // Compute Jacobian matrix
-      Matrix6x6 Jg;
-      computeGeometricJacobian(T_matrices, Jg);
-      _curr_jacobian = Jg;
 
-      // Construct the desired control via error
-      float Kp = 0.9f;
-      float Kr = 0.3f;
-      Vect6f x_dot;
 
-      for (int i = 0; i < 3; i++) {
-        x_dot.v[i]     = Kp * err.v[i];
-        x_dot.v[i + 3] = Kr * err.v[i + 3];
-      }
-
-      // Get the actual q_dot
-      //computeTransposeMethod(_q_dot, Jg, x_dot);
-      computeDLSMethod(_q_dot, Jg, x_dot);
-
-      for (int i=0; i<JOINT_NUM; i++){
-        if (fabs(_q_dot[i]) > _max_joint_speeds[i]){
-          _q_dot[i] = (_q_dot[i] > 0 ? 1 : -1) * _max_joint_speeds[i];
-          //_q_dot[i] = 0.8f * _q_dot_prev[i] + 0.2f * _q_dot[i];
-        }
-      }
+    break;  
+  case robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL:
+    for (int i=0; i<JOINT_NUM; i++){
+      q_calc[i] = calcTrapTrajBasic(_robotState.q[i],
+                                    _robotPlanner.q_planned[i],
+                                    dt,
+                                    _robotState.q_target[i],
+                                    _robotConfig.max_joint_speeds[i],
+                                    _robotConfig.max_joint_accelerations[i]);
       
-      // Not really a good solution as orientation can still be wrong especially if we only move joint 5
-      if (err_norm < 0.25f && ori_err < 0.2f) {   // adjust threshold
-        for (int i = 0; i < JOINT_NUM; i++) {
-            _joints[i].setTargetSpeed(0);
-        }
-        return;
-      }
-      else{
-        for (int i=0; i<JOINT_NUM; i++){
-          _joints[i].setTargetSpeed(_q_dot[i]);
-        }
-      }
-      break;
+      _robotPlanner.q_planned[i] = q_calc[i];
+      _joints[i].setTargetSpeed(q_calc[i]);
+      _robotState.q_dot_target[i] = q_calc[i];
     }
-    case JOINT_CONTROL: {
-      // In joint control mode we just move to the target joint angles
-
-      for (int i=0; i<JOINT_NUM; i++){
-          float target_angle = _target_joint_angles[i];
-          float curr_angle = _curr_joint_angles[i];
-          float curr_speed = _curr_joint_speeds[i];
-          float max_accel = _max_joint_accels[i];
-          float max_speed = _max_joint_speeds[i];
-
-          float calc_accel = 0.0f;
-          float calc_speed = 0.0f;
-
-          float remaining = target_angle - curr_angle;
-          float min_stop_d = (pow(_curr_joint_speeds[i], 2)) / (2 * _max_joint_accels[i]);
-          int8_t sign = 1;
-          
-          if (remaining < 0){
-            sign = -1;
-          }          
-
-          // If we have arrived at the goal stop and don't move
-          if ((remaining < 0) and (abs(curr_speed) < ANGLE_RAD_POSITION_TOLERANCE)){
-            _joints[i].setTargetSpeed(0.0);
-          }
-          else{
-
-            if (remaining <= min_stop_d){
-              // Deceleration
-              calc_accel = - sign * max_accel;
-            }
-            else if (curr_speed < max_speed){
-              calc_accel = sign * max_accel;
-            }
-            else{
-              calc_accel = 0.0f;
-            }
-            
-            calc_speed = curr_speed + (calc_accel * t_step);
-            clampAbsFloat(calc_speed, max_speed);
-            _joints[i].setTargetSpeed(calc_speed);
-          }
-        }
-      break;
-    }
+  break;  
+  
+  default:
+    break;
   }
 }
 
-void Robot::printInfo(){
-  Serial.println("--------------- Robot info -------------------------");
-  Serial.println("Curre. cart pose: ");
-  printVect6x1(getCartPose());
-  Serial.println("Target cart pose: ");
-  printVect6x1(_goal_pose);
-  Serial.println("Calculated q_dot: ");
-  printArr6x1(_q_dot);
-  Serial.println("----------------------------------------------------");
+float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt,
+                                float goal, float max_vel, float max_accel) {
+  // remaining distance
+  float error  = goal - curr_pos;
+  // direction of movement
+  float dir    = sign(error);
+  // Distance needed to stop at current velocity
+  float d_stop = pow(curr_vel, 2) / (2.0f * max_accel);
 
-  // testJacobian();
+  float calc_accel = 0.0f;
+  float calc_vel = 0.0f;
+
+  if (fabsf(error) < ANGLE_RAD_POSITION_TOLERANCE){
+    return 0.0f;
+  }
+  
+  if (curr_vel < max_vel)
+  {
+    calc_accel = dir * max_accel;
+  }
+  else{
+    calc_accel = 0.0f;
+  } 
+
+  if (fabsf(error) <= d_stop){
+    calc_accel = -dir * max_accel;
+  } 
+
+  calc_vel = clampAbsFloat(curr_vel + (calc_accel * dt) , max_vel);
+  
+  return calc_vel;
 }
 
-void Robot::enableJoints(){
+void Robot::enable() {
   digitalWrite(_enable_pin0, LOW);
   digitalWrite(_enable_pin1, LOW);
-  _enabled = true;
+  _robotState.enabled = true;
 }
 
-void Robot::disableJoints(){
+void Robot::disable(){
   digitalWrite(_enable_pin0, HIGH);
   digitalWrite(_enable_pin1, HIGH);
-  _enabled = false;
+  _robotState.enabled = false;
 }
 
-void Robot::jointMove(float q[JOINT_NUM]){
+void Robot::updateJointStates() {
   for (int i=0; i<JOINT_NUM; i++){
-    _target_joint_angles[i] = q[i];
+    _joints[i].update();
+
+    _robotState.joints[i] = _joints[i].getState();
+
+    _robotState.q[i] = _robotState.joints[i].angle_rad;
+    _robotState.q_dot[i] = _robotState.joints[i].angle_vel_rad_s;
+
+    if (_robotState.joints[i].at_min_lim){
+      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MIN;
+    }
+    else if (_robotState.joints[i].at_max_lim){
+      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MAX;
+    }
+  }
+  _robotState.moving = false;
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    if (_robotState.joints[i].moving) {
+      _robotState.moving = true;
+      break;
+    }
+  }   
+}
+
+void Robot::moveJoint(float target_joint_pose[JOINT_NUM]) {
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
+  for (int i = 0; i<JOINT_NUM; i++){
+    _robotState.q_target[i] = target_joint_pose[i];
   }
 }
 
-void Robot::cartMove(float x[6]){
+void Robot::moveCart(float target_cart_pose[6]) {
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_CART_CONTROL;
   for (int i = 0; i<6; i++){
-    _goal_pose.v[i] = x[i]; 
+    _robotState.x_target[i] = target_cart_pose[i];
   }
 }
 
-void Robot::currCartPoseFromT(void){
-  _curr_rot_Mat = getRotationMatrixFromPoseMatrix(_curr_cart_pose_Mat);
-  _curr_eul_angles_Vect = rotationMatrixToEulerAngles(_curr_rot_Mat);
-
-  _current_pose.v[0] = _curr_cart_pose_Mat.m[0][3];
-  _current_pose.v[1] = _curr_cart_pose_Mat.m[1][3];
-  _current_pose.v[2] = _curr_cart_pose_Mat.m[2][3];
-  _current_pose.v[3] = _curr_eul_angles_Vect.v[0];
-  _current_pose.v[4] = _curr_eul_angles_Vect.v[1];
-  _current_pose.v[5] = _curr_eul_angles_Vect.v[2];
-}
-
-void Robot::computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]) const {
-  // ─────────────────────────────────────────────────────────────
-  // Forward kinematics
-  // ─────────────────────────────────────────────────────────────
-  
+void Robot::computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]) {
   T[0] = getIdentityMatrix();
 
   for (int i=0; i<JOINT_NUM; i++){
@@ -251,12 +178,8 @@ void Robot::computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)
   }
 }
 
-void Robot::computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J)) const {
-  // ─────────────────────────────────────────────────────────────
-  // Geometric Jacobian compute
-  // ─────────────────────────────────────────────────────────────
-  
-  // Position vector
+void Robot::computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J)) {
+ // Position vector
   Vect3f o[JOINT_NUM+1];
   // Z-axis rientation vector 
   Vect3f z[JOINT_NUM+1];
@@ -296,219 +219,50 @@ void Robot::computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix
   }
 }
 
-void Robot::computeTransposeMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot){
-  Matrix6x6 J_T = transposeMat(J);
-  for (int i=0; i<JOINT_NUM; i++){
-   q_dot[i] = J_T.m[i][0] * x_dot.v[0] + J_T.m[i][1] * x_dot.v[1] + J_T.m[i][2] * x_dot.v[2] + J_T.m[i][3] * x_dot.v[3] + J_T.m[i][4] * x_dot.v[4] + J_T.m[i][5] * x_dot.v[5];
-  }
-}
+Vect6f Robot::computeCartError(const Matrix4x4& curr_pose, const Vect6f& goal){
+  Vect6f err = {0.0f};
 
-void Robot::computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot){
-  float lambda = 0.1f;
-
-  Matrix6x6 J_T = transposeMat(J);
-  Matrix6x6 JJ_T = multiplyMatrices(J, J_T);
-
-  for (int i=0; i<6; i++){
-    JJ_T.m[i][i] += lambda * lambda;
-  }
-
-  Matrix6x6 JJ_T_inv = invertMatrix(JJ_T);
-
-  float temp[6] = {0};
-
-  for (int i=0; i<6; i++){
-    for (int j=0; j<6; j++){
-      temp[i] += JJ_T_inv.m[i][j] * x_dot.v[j];
-    }
-  }
-
-  for (int i=0; i<6; i++){
-    q_dot[i] = 0;
-    for (int j=0; j<6; j++){
-      // should be transposed but we can just switch i and j indexes
-      q_dot[i] += J.m[j][i] * temp[j];
-    }
-  }
-}
-
-Vect3f Robot::computeRotErrMat(Matrix3x3 Rot_d, Matrix3x3 Rot_curr){
-  Matrix3x3 Rot_T = transposeMat(Rot_curr);
-  Matrix3x3 Rot_res = multiplyMatrices(Rot_T, Rot_d);
-  Vect3f err_res;
-  err_res.v[0] = 0.5f * (Rot_res.m[2][1] - Rot_res.m[1][2]);
-  err_res.v[1] = 0.5f * (Rot_res.m[0][2] - Rot_res.m[2][0]);
-  err_res.v[2] = 0.5f * (Rot_res.m[1][0] - Rot_res.m[0][1]);
-  return err_res;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Setter functions
-// ─────────────────────────────────────────────────────────────
-
-void Robot::setMaxJointSpeed(float max_joint_speeds[JOINT_NUM]){
-  for (int i=0; i<JOINT_NUM; i++){
-    _max_joint_speeds[i] = max_joint_speeds[i]; 
-    _joints[i].setMaxSpeed(max_joint_speeds[i]);
-  }
-}
-
-void Robot::setMaxJointAcceleration(float max_joint_accelerations[JOINT_NUM]){
-  for (int i=0; i<JOINT_NUM; i++){
-    _max_joint_accels[i] = max_joint_accelerations[i];
-    _joints[i].setMaxAcceleration(max_joint_accelerations[i]);
-  }
-}
-
-bool Robot::setMotionControlMode(control_mode_t motion_control_mode){
-  // if the paradigm is the same skip
-  if (motion_control_mode == _control_mode){
-    return true;
-  }
-
-  if (isMoving()){
-    return false;
-  }
-
-  _control_mode = motion_control_mode;
-  return true;
-}
-
-bool Robot::setMotionControlParadigm(motion_control_paradigm_t motion_control_paradigm){
-  // if the paradigm is the same skip
-  if (motion_control_paradigm == _motion_control_paradigm){
-    return true;
-  }
-
-  // first check if the robot is stopped
-  if (isMoving()){
-    return false;
-  }
-
-  // if it is stopped we can change joint controls
-  for (int i=0; i<JOINT_NUM; i++){
-    if (!_joints[i].setMotionControlParadigm(motion_control_paradigm)){
-      return false;
-    }
-  }
-  _motion_control_paradigm = motion_control_paradigm;
-  return true;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Getter functions
-// ─────────────────────────────────────────────────────────────
-
-const bool Robot::isMoving() const {
-  return _moving;
-}
-
-Vect6f Robot::getCartPose(void) {
-  return _current_pose;
-}
-
-const float* Robot::getJointAngles(void) const {
-  return _curr_joint_angles;
-}
-
-const float* Robot::getMaxJointSpeed(void) const {
-  return _max_joint_speeds;
-}
-
-const float* Robot::getMaxJointAcceleration(void) const {
-  return _max_joint_accels;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Private functions
-// ─────────────────────────────────────────────────────────────
-
-void Robot::testJacobian(){
-
-  float q[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};   // current joint angles
-  float q_dot[6] = {0.0f, 0.01f, 0.01f, 0.0f, -0.01f, 0.0f}; // small random velocities
-  Matrix4x4 T[JOINT_NUM+1];
-  computeForwardKinematics(q, T);   // same logic as your FK loop
-
-  Matrix6x6 J;
-  computeGeometricJacobian(T, J);
-  
-  float x_dot_analytical[6] = {0};
-
-  for (int i=0; i<6; i++){
-    for (int j=0; j<6; j++){
-        x_dot_analytical[i] += J.m[i][j] * q_dot[j];
-    }
-  }
-  float eps = 1e-4f;
-  
-  float q2[6];
-  for (int i=0; i<6; i++){
-    q2[i] = q[i] + eps * q_dot[i];
-  }
-
-  Matrix4x4 T1_temp[JOINT_NUM + 1];
-  Matrix4x4 T2_temp[JOINT_NUM + 1];
-  computeForwardKinematics(q, T1_temp);
-  computeForwardKinematics(q2, T2_temp);
-  
-  Matrix4x4 T1 = T1_temp[JOINT_NUM];
-  Matrix4x4 T2 = T2_temp[JOINT_NUM];
-
-  float x_dot_num[6];
-
-  x_dot_num[0] = (T2.m[0][3] - T1.m[0][3]) / eps;
-  x_dot_num[1] = (T2.m[1][3] - T1.m[1][3]) / eps;
-  x_dot_num[2] = (T2.m[2][3] - T1.m[2][3]) / eps;
-  
-  Matrix3x3 R1 = getRotationMatrixFromPoseMatrix(T1);
-  Matrix3x3 R2 = getRotationMatrixFromPoseMatrix(T2);
-
-  Vect3f rot_err = computeRotErrMat(R2, R1);
-
-  x_dot_num[3] = rot_err.v[0] / eps;
-  x_dot_num[4] = rot_err.v[1] / eps;
-  x_dot_num[5] = rot_err.v[2] / eps;
-
-  Serial.println("------------ Jacobian test ------------");
-  printArr6x1(x_dot_analytical);
-  printArr6x1(x_dot_num);
-  Serial.println("---------- Jacobian test end ----------");
-}
-
-void Robot::updateJointStates() {
-  _moving = false;
-
-  for (int i = 0; i < JOINT_NUM; i++) {
-    _joints[i].update();
-    _curr_joint_angles[i] = _joints[i].getAngle();
-
-    if (_joints[i].isMoving()) {
-      _moving = true;
-    }
-  }
-}
-
-Vect6f Robot::computeTaskError(const Vect6f& current, const Vect6f& goal){
-  Vect3f err_p;
-  Vect3f err_r;
-  
-  // Position error
-  for (int i=0; i<3; i++){
-    err_p.v[i] = goal.v[i] - current.v[i];
-  }
+  err.v[0] = goal.v[0] - curr_pose.m[0][3];
+  err.v[1] = goal.v[1] - curr_pose.m[1][3];
+  err.v[2] = goal.v[2] - curr_pose.m[2][3];
 
   // Rotation error
+  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(curr_pose);
+  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
   float goal_angles[3] = {goal.v[3], goal.v[4], goal.v[5]};
   Matrix3x3 R_goal = eulerAnglesToRotationMatrix(goal_angles);
-  err_r = computeRotErrMat(R_goal, _curr_rot_Mat);
+  Vect3f err_r = computeRotErrMat(R_goal, _temp_rot);
 
-  Vect6f err;
-  err.v[0] = err_p.v[0];
-  err.v[1] = err_p.v[1];
-  err.v[2] = err_p.v[2];
   err.v[3] = err_r.v[0];
   err.v[4] = err_r.v[1];
   err.v[5] = err_r.v[2];
   return err;
 }
+// ----------- Getters -----------
+RobotState Robot::getState(){
+  return _robotState;
+}
+
+float* Robot::getMaxJointSpeed() {
+  return _robotConfig.max_joint_speeds;
+}
+
+float* Robot::getMaxJointAcceleration() {
+  return _robotConfig.max_joint_accelerations;
+}
+
+// ----------- Setters -----------
+void Robot::setMaxJointSpeed(float max_speed[JOINT_NUM]) {
+  for (int i = 0; i<JOINT_NUM; i++){
+    _robotConfig.max_joint_speeds[i] = max_speed[i];
+    _joints[i].setMaxSpeed(max_speed[i]);
+  }
+}
+
+void Robot::setMaxJointAcceleration(float max_accel[JOINT_NUM]) {
+  for (int i = 0; i<JOINT_NUM; i++){
+    _robotConfig.max_joint_accelerations[i] = max_accel[i];
+    _joints[i].setMaxAcceleration(max_accel[i]);
+  }
+}
+

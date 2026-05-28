@@ -1,14 +1,13 @@
 #ifndef ROBOT_H
 #define ROBOT_H
 
-#include <Arduino.h>
-#include "joint.h"
 #include "config.h"
-#include "utils.h"
+#include "joint.h"
+#include "robot_types.h"
 
-// ─────────────────────────────────────────────────────────────
-// Denavit Hatenberg - Parameters
-// ─────────────────────────────────────────────────────────────
+#define ANGLE_RAD_SPEED_TOLERANCE 0.0025f
+#define ANGLE_RAD_POSITION_TOLERANCE 0.005f
+ 
 struct DHParam {
   float theta;
   float alpha;
@@ -16,86 +15,50 @@ struct DHParam {
   float a;
 };
 
-extern const DHParam dh_table[JOINT_NUM];
-
-enum control_mode_t {
-  CARTESIAN_CONTROL,
-  JOINT_CONTROL
+const DHParam dh_table[JOINT_NUM] = {
+  { 0.0f,     -PI / 2.0f, 102.0f,  0.0f   },  // joint 0
+  { -PI/2.0f, 0.0f,       0.0f,    210.0f },  // joint 1
+  { 0.0f,     -PI / 2.0f, 0.0f,    0.0f   },  // joint 2
+  { 0.0f,     PI / 2.0f,  202.0f,  0.0f   },  // joint 3
+  { PI,       PI / 2.0f,  0.0f,    0.0f   },  // joint 4
+  { 0.0f,     0.0f,       43.5f,   0.0f   }   // joint 5
 };
 
-
-// all angular variables should be defined in radians
-// all cartesian longitudinal variables should be defined in meters
 class Robot
 {
   public:
     Robot();
 
-    void init(void);
-    void update(void);
-    void enableJoints(void);
-    void disableJoints(void);
-    bool setMotionControlParadigm(motion_control_paradigm_t motion_control_paradigm);
-    bool setMotionControlMode(control_mode_t motion_control_mode);
-    const bool isMoving(void) const;
-    void printInfo();
+    void init();
+    void update();
+    void enable();
+    void disable();
+    RobotState getState();
 
-    void jointMove(float q[JOINT_NUM]);
-    void cartMove(float x[6]);
-    void IKMove(float q[JOINT_NUM]);
-
-    const float* getJointAngles(void) const;
-    const float* getMaxJointSpeed(void) const;
-    const float* getMaxJointAcceleration(void) const;
-    Vect6f getCartPose(void);
-    void currCartPoseFromT(void);
-
-    void setMaxJointSpeed(float max_joint_speeds[JOINT_NUM]);
-    void setMaxJointAcceleration(float max_joint_accelerations[JOINT_NUM]);
-    void computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM + 1]) const;
-    void computeGeometricJacobian(const  Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J)) const;
-    void computeTransposeMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot);
-    void computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot);
-    Vect3f computeRotErrMat(Matrix3x3 Rot_d, Matrix3x3 Rot_curr);
+    void moveJoint(float target_joint_pose[JOINT_NUM]);
+    void moveCart(float target_cart_pose[6]);
+    void setMaxJointSpeed(float max_speed[JOINT_NUM]);
+    void setMaxJointAcceleration(float max_accel[JOINT_NUM]);
+    void computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]);
+    void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J));
+    float calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel);
+    float* getMaxJointSpeed();
+    float* getMaxJointAcceleration();
+    Vect6f computeCartError(const Matrix4x4& curr_pose, const Vect6f& goal);
 
   private:
-    bool _enabled;
-    bool _moving;
-    uint8_t _enable_pin0;
-    uint8_t _enable_pin1;
-    motion_control_paradigm_t _motion_control_paradigm;
-    control_mode_t _control_mode;
+    uint32_t last_time;
 
-    Matrix4x4 _curr_cart_pose_Mat;
-    Matrix3x3 _curr_rot_Mat;
-    Matrix6x6 _curr_jacobian;
-    Vect3f _curr_eul_angles_Vect;
+    char _output_buffer[128];
 
-    float last_time;
-    float _q_dot[JOINT_NUM];
-    Vect6f _current_pose;
-    Vect6f _goal_pose;
-    Vect6f _task_velocity;
-    Vect6f _task_err;
-
-    float _curr_joint_angles[JOINT_NUM];
-    float _target_joint_angles[JOINT_NUM];
-    float _max_joint_angles[JOINT_NUM];
-    float _min_joint_angles[JOINT_NUM];
-
-    float _curr_joint_speeds[JOINT_NUM];
-    float _max_joint_speeds[JOINT_NUM];
-
-    float _curr_joint_accels[JOINT_NUM];
-    float _max_joint_accels[JOINT_NUM];
+    uint8_t _enable_pin0; // Pin to enable joints 0, 1, 2
+    uint8_t _enable_pin1; // Pin to enable joints 3, 4, 5
 
     Joint _joints[JOINT_NUM];
-
+    RobotState _robotState;
+    RobotConfig _robotConfig;
+    RobotPlanner _robotPlanner;
     void updateJointStates();
-    Vect6f computeTaskError(const Vect6f& current, const Vect6f& goal);
-    void computeKinematics(const  Matrix4x4 (&T)[JOINT_NUM + 1]) const;
-    void testJacobian();
-
 };
 
 #endif // ROBOT_H
