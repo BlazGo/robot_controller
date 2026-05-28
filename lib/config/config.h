@@ -4,9 +4,9 @@
 #include <Arduino.h>
 
 // Choose which MCU you are using (Only pick one) TODO: better selection...
-#define WEACT_RP2350B 1
+#define WEACT_RP2350B 0
 #define WEACT_STM32H5 0
-#define RP2040 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+#define RP2040 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -19,8 +19,8 @@
 
 #if (RP2040 == 1)
 
-  #define STEP_PIN_0  17
-  #define DIR_PIN_0   16
+  #define STEP_PIN_0  18
+  #define DIR_PIN_0   17
 
   #define STEP_PIN_1 0
   #define DIR_PIN_1  0
@@ -37,7 +37,7 @@
   #define STEP_PIN_5 0
   #define DIR_PIN_5  0
 
-  #define ENABLE_PIN_0  18
+  #define ENABLE_PIN_0  26
   #define ENABLE_PIN_1  0
 
   #define END_SWITCH_0_N 0
