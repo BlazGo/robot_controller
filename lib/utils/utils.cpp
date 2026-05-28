@@ -1,7 +1,75 @@
 #include "Arduino.h"
 #include "utils.h"
 #include "MatrixMath.h"
+#include "config.h"
 
+Vect3f computeRotErrMat(Matrix3x3 Rot_d, Matrix3x3 Rot_curr){
+  Matrix3x3 Rot_T = transposeMat(Rot_curr);
+  Matrix3x3 Rot_res = multiplyMatrices(Rot_T, Rot_d);
+  Vect3f err_res;
+  err_res.v[0] = 0.5f * (Rot_res.m[2][1] - Rot_res.m[1][2]);
+  err_res.v[1] = 0.5f * (Rot_res.m[0][2] - Rot_res.m[2][0]);
+  err_res.v[2] = 0.5f * (Rot_res.m[1][0] - Rot_res.m[0][1]);
+  return err_res;
+}
+
+Matrix4x4 multiplyMatrices(const Matrix4x4& A, const Matrix4x4& B){
+  Matrix4x4 AB{};
+
+  for (int i=0; i<4; i++){
+    for (int j=0; j<4; j++){
+      for (int k=0; k<4; k++){
+        AB.m[i][j] += A.m[i][k] * B.m[k][j];
+      }
+    }
+  }
+  return AB;
+}
+
+Matrix4x4 getIdentityMatrix(void){
+  Matrix4x4 I = {
+    {{1.0f, 0.0f, 0.0f, 0.0f},
+     {0.0f, 1.0f, 0.0f, 0.0f},
+     {0.0f, 0.0f, 1.0f, 0.0f},
+     {0.0f, 0.0f, 0.0f, 1.0f}}
+  };
+  return I;
+}
+
+float sign(float value) {
+  return (value > 0) - (value < 0);
+}
+
+float moveTowards(float current, float target, float max_delta){
+  float delta = target - current;
+  
+  // if target is outside of boudaries clamp it
+  if (delta > max_delta){
+    return current + max_delta;
+  }
+  if (delta < -max_delta){
+    return current - max_delta;
+  }
+  // if the target is within boundaries return the already valid target
+  return target;
+}
+
+float clampAbsFloat(float value, float abs_limit){
+  // check if it's negative
+  if (abs_limit < 0.0f){
+    abs_limit = -abs_limit;
+  }
+
+  if (value > abs_limit){
+    return abs_limit;
+  }
+  if (value < -abs_limit){
+    return -abs_limit;
+  }
+  return value;
+}
+
+// --------------------------------------
 Vect3f cross(const Vect3f& a, const Vect3f& b){
   Vect3f res;
   res.v[0] = a.v[1]*b.v[2] - a.v[2]*b.v[1];
@@ -26,18 +94,6 @@ Vect3f sumVec(const Vect3f& A, const Vect3f& B){
   return res;
 }
 
-Matrix4x4 multiplyMatrices(const Matrix4x4& A, const Matrix4x4& B){
-  Matrix4x4 AB{};
-
-  for (int i=0; i<4; i++){
-    for (int j=0; j<4; j++){
-      for (int k=0; k<4; k++){
-        AB.m[i][j] += A.m[i][k] * B.m[k][j];
-      }
-    }
-  }
-  return AB;
-}
 
 Matrix3x3 multiplyMatrices(const Matrix3x3& A, const Matrix3x3& B){
   Matrix3x3 AB{};
@@ -84,16 +140,6 @@ Matrix6x6 invertMatrix(const Matrix6x6& A){
   }
   
   return A_inv;
-}
-
-Matrix4x4 getIdentityMatrix(void){
-  Matrix4x4 I = {
-    {{1.0f, 0.0f, 0.0f, 0.0f},
-     {0.0f, 1.0f, 0.0f, 0.0f},
-     {0.0f, 0.0f, 1.0f, 0.0f},
-     {0.0f, 0.0f, 0.0f, 1.0f}}
-  };
-  return I;
 }
 
 void printArr6x1(float arr[6]){
@@ -227,34 +273,5 @@ Matrix3x3 transposeMat(Matrix3x3 mat){
     }    
   }
   return mat_T;
-}
-
-float moveTowards(float current, float target, float max_delta){
-  float delta = target - current;
-  
-  // if target is outside of boudaries clamp it
-  if (delta > max_delta){
-    return current + max_delta;
-  }
-  if (delta < -max_delta){
-    return current - max_delta;
-  }
-  // if the target is within boundaries return the already valid target
-  return target;
-}
-
-float clampAbsFloat(float value, float abs_limit){
-  // check if it's negative
-  if (abs_limit < 0.0f){
-    abs_limit = -abs_limit;
-  }
-
-  if (value > abs_limit){
-    return abs_limit;
-  }
-  if (value < -abs_limit){
-    return -abs_limit;
-  }
-  return value;
 }
 
