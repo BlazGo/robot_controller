@@ -45,6 +45,7 @@ class Robot
     float* getMaxJointSpeed();
     float* getMaxJointAcceleration();
     Vect6f computeCartError(const Matrix4x4& curr_pose, const Vect6f& goal);
+    void writePoseToState(Matrix4x4 T_EE);
 
   private:
     uint32_t last_time;

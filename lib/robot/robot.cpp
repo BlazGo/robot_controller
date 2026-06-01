@@ -41,16 +41,8 @@ void Robot::update() {
   Matrix4x4 T_matrices[JOINT_NUM + 1];
   computeForwardKinematics(_robotState.q, T_matrices);
 
-  // Extract the data
-  _robotState.T_EE = T_matrices[JOINT_NUM];
-  _robotState.x[0] = _robotState.T_EE.m[0][3];
-  _robotState.x[1] = _robotState.T_EE.m[1][3];
-  _robotState.x[2] = _robotState.T_EE.m[2][3];
-  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(_robotState.T_EE);
-  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
-  _robotState.x[3] = _temp_eul.v[0];
-  _robotState.x[4] = _temp_eul.v[1];
-  _robotState.x[5] = _temp_eul.v[2];
+  // Extract the data and update x and T_EE
+  writePoseToState(T_matrices[JOINT_NUM]);
 
   float q_calc[JOINT_NUM] = {0.0f};
 
@@ -93,9 +85,9 @@ float Robot::calcTrapTrajBasic(float curr_pos,
     float error = goal - curr_pos;
 
     if (fabsf(error) < ANGLE_RAD_POSITION_TOLERANCE) {
-    return 0.0f;
-  }
-  
+        return 0.0f;
+    }
+
     float dir_to_goal = sign(error);
     float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
     float vel_toward_goal = curr_vel * dir_to_goal;
@@ -109,14 +101,23 @@ float Robot::calcTrapTrajBasic(float curr_pos,
     } else if (fabsf(curr_vel) < max_vel) {
         calc_accel = dir_to_goal * max_accel;
     } else {
-    calc_accel = 0.0f;
-  } 
+        calc_accel = 0.0f;
+    }
 
     float calc_vel = curr_vel + calc_accel * dt;
     return clampAbsFloat(calc_vel, max_vel);
-  } 
+}
 
+void Robot::writePoseToState(Matrix4x4 T_EE){
   _robotState.T_EE = T_EE;
+  _robotState.x[0] = _robotState.T_EE.m[0][3];
+  _robotState.x[1] = _robotState.T_EE.m[1][3];
+  _robotState.x[2] = _robotState.T_EE.m[2][3];
+  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(_robotState.T_EE);
+  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
+  _robotState.x[3] = _temp_eul.v[0];
+  _robotState.x[4] = _temp_eul.v[1];
+  _robotState.x[5] = _temp_eul.v[2];
 }
 
 void Robot::enable() {
