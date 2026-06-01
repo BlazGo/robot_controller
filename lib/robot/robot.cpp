@@ -83,37 +83,40 @@ void Robot::update() {
   }
 }
 
-float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt,
-                                float goal, float max_vel, float max_accel) {
-  // remaining distance
-  float error  = goal - curr_pos;
-  // direction of movement
-  float dir    = sign(error);
-  // Distance needed to stop at current velocity
-  float d_stop = pow(curr_vel, 2) / (2.0f * max_accel);
+float Robot::calcTrapTrajBasic(float curr_pos,
+                               float curr_vel,
+                               float dt,
+                               float goal,
+                               float max_vel,
+                               float max_accel)
+{
+    float error = goal - curr_pos;
 
-  float calc_accel = 0.0f;
-  float calc_vel = 0.0f;
-
-  if (fabsf(error) < ANGLE_RAD_POSITION_TOLERANCE){
+    if (fabsf(error) < ANGLE_RAD_POSITION_TOLERANCE) {
     return 0.0f;
   }
   
-  if (curr_vel < max_vel)
-  {
-    calc_accel = dir * max_accel;
-  }
-  else{
+    float dir_to_goal = sign(error);
+    float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
+    float vel_toward_goal = curr_vel * dir_to_goal;
+
+    float calc_accel = 0.0f;
+
+    if (vel_toward_goal < 0.0f) {
+        calc_accel = dir_to_goal * max_accel;
+    } else if (fabsf(error) <= d_stop) {
+        calc_accel = -sign(curr_vel) * max_accel;
+    } else if (fabsf(curr_vel) < max_vel) {
+        calc_accel = dir_to_goal * max_accel;
+    } else {
     calc_accel = 0.0f;
   } 
 
-  if (fabsf(error) <= d_stop){
-    calc_accel = -dir * max_accel;
+    float calc_vel = curr_vel + calc_accel * dt;
+    return clampAbsFloat(calc_vel, max_vel);
   } 
 
-  calc_vel = clampAbsFloat(curr_vel + (calc_accel * dt) , max_vel);
-  
-  return calc_vel;
+  _robotState.T_EE = T_EE;
 }
 
 void Robot::enable() {
