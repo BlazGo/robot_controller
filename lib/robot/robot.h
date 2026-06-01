@@ -41,10 +41,11 @@ class Robot
     void setMaxJointAcceleration(float max_accel[JOINT_NUM]);
     void computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]);
     void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J));
+    void computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot);
+    Vect6f computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]);
     float calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel);
     float* getMaxJointSpeed();
     float* getMaxJointAcceleration();
-    Vect6f computeCartError(const Matrix4x4& curr_pose, const Vect6f& goal);
     void writePoseToState(Matrix4x4 T_EE);
 
   private:

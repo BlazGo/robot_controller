@@ -46,13 +46,42 @@ void Robot::update() {
 
   float q_calc[JOINT_NUM] = {0.0f};
 
+  float err_norm = 0.0f;
+  float ori_err = 0.0f;
+  float Kp = 0.9f;
+  float Kr = 0.3f;
+  Vect6f err;
+  Vect6f x_dot;
+
   switch (_robotState.robot_motion_control_paradigm)
   {
   case robot_motion_control_paradigm_t::ROBOT_CART_CONTROL:
     Matrix6x6 Jg;
     computeGeometricJacobian(T_matrices, Jg);
+    
+    err = computeCartErr(_robotState.T_EE, _robotState.x_target);
+    
+    // Construct the desired control via error
+    for (int i = 0; i < 3; i++) {
+      x_dot.v[i]     = Kp * err.v[i];
+      x_dot.v[i + 3] = Kr * err.v[i + 3];
+    }
 
+    // Calculate normalized? position error
+    err_norm = sqrt(err.v[0]*err.v[0] +
+                    err.v[1]*err.v[1] +
+                    err.v[2]*err.v[2]);
 
+    ori_err = sqrt(err.v[3]*err.v[3] +
+                   err.v[4]*err.v[4] +
+                   err.v[5]*err.v[5]);
+                      
+    // will save the calculated q_dot in the struct array
+    computeDLSMethod(q_calc, Jg, x_dot);
+    
+    for (int i=0; i<JOINT_NUM; i++){
+      _robotPlanner.q_planned[i] = q_calc[i];
+    }
 
     break;  
   case robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL:
@@ -65,14 +94,19 @@ void Robot::update() {
                                     _robotConfig.max_joint_accelerations[i]);
       
       _robotPlanner.q_planned[i] = q_calc[i];
-      _joints[i].setTargetSpeed(q_calc[i]);
-      _robotState.q_dot_target[i] = q_calc[i];
     }
   break;  
   
   default:
     break;
   }
+
+  // Finally set the target speed
+  for (int i=0; i<JOINT_NUM; i++){
+    _joints[i].setTargetSpeed(_robotPlanner.q_planned[i]);
+    _robotState.q_dot_target[i] = _robotPlanner.q_planned[i];
+  }
+
 }
 
 float Robot::calcTrapTrajBasic(float curr_pos,
@@ -223,25 +257,57 @@ void Robot::computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix
   }
 }
 
-Vect6f Robot::computeCartError(const Matrix4x4& curr_pose, const Vect6f& goal){
-  Vect6f err = {0.0f};
+void Robot::computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot){
+  float lambda = 0.1f;
 
-  err.v[0] = goal.v[0] - curr_pose.m[0][3];
-  err.v[1] = goal.v[1] - curr_pose.m[1][3];
-  err.v[2] = goal.v[2] - curr_pose.m[2][3];
+  Matrix6x6 J_T = transposeMat(J);
+  Matrix6x6 JJ_T = multiplyMatrices(J, J_T);
+
+  for (int i=0; i<6; i++){
+    JJ_T.m[i][i] += lambda*lambda;
+  }
+
+  Matrix6x6 JJ_T_lambda_inv = invertMatrix(JJ_T);
+
+  float temp[6] = {0.0f};
+
+  for (int i=0; i<6; i++){
+    for (int j=0; j<6; j++){
+      temp[i] += JJ_T_lambda_inv.m[i][j] * x_dot.v[j];
+    }
+  }
+  for (int i=0; i<6; i++){
+    for (int j=0; j<6; j++){
+      q_dot[i] += J_T.m[i][j] * temp[j];
+    }
+  }
+}
+
+Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]){
+  Vect3f err_p; 
+  Vect3f err_r;
+  
+  // Position error
+  for (int i=0; i<3; i++){
+    err_p.v[i] = x_goal[i] - T_curr.m[i][3];
+  }
 
   // Rotation error
-  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(curr_pose);
-  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
-  float goal_angles[3] = {goal.v[3], goal.v[4], goal.v[5]};
+  float goal_angles[3] = {x_goal[3], x_goal[4], x_goal[5]};
   Matrix3x3 R_goal = eulerAnglesToRotationMatrix(goal_angles);
-  Vect3f err_r = computeRotErrMat(R_goal, _temp_rot);
+  err_r = computeRotErrMat(R_goal, getRotationMatrixFromPoseMatrix(T_curr));
 
+  Vect6f err;
+  err.v[0] = err_p.v[0];
+  err.v[1] = err_p.v[1];
+  err.v[2] = err_p.v[2];
   err.v[3] = err_r.v[0];
   err.v[4] = err_r.v[1];
   err.v[5] = err_r.v[2];
   return err;
 }
+
+
 // ----------- Getters -----------
 RobotState Robot::getState(){
   return _robotState;
