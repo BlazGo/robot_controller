@@ -5,6 +5,7 @@
 #include "joint.h"
 #include "robot_types.h"
 #include "encoder_manager.h"
+#include "robot_state_shared.h"
 
 #define ANGLE_RAD_SPEED_TOLERANCE 0.0025f
 #define ANGLE_RAD_POSITION_TOLERANCE 0.005f
@@ -51,6 +52,7 @@ class Robot
     bool updateFromEncoders();
     void setJointAngles(float q[JOINT_NUM]);
     void attachEncoderManager(EncoderManager *encoderManager);
+    void sharedWriteRobotState(const RobotState &rs);
 
   private:
     uint32_t last_time;
