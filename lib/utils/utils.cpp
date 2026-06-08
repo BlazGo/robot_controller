@@ -3,6 +3,14 @@
 #include "MatrixMath.h"
 #include "config.h"
 
+float degToRad(float angle_deg){
+  return (angle_deg / 180.0f) * PI; // Simplify it and we divide both by 2
+}
+
+float radToDeg(float angle_rad){
+  return angle_rad * (180.0f / PI);
+}
+
 Vect3f computeRotErrMat(Matrix3x3 Rot_d, Matrix3x3 Rot_curr){
   Matrix3x3 Rot_T = transposeMat(Rot_curr);
   Matrix3x3 Rot_res = multiplyMatrices(Rot_T, Rot_d);

@@ -46,6 +46,9 @@ Matrix3x3 eulerAnglesToRotationMatrix(float euler[3]);
 Vect3f rotationMatrixToEulerAngles(Matrix3x3& M);
 Vect3f eulRadToDeg(Vect3f& eulAngles);
 
+float degToRad(float angle_deg);
+float radToDeg(float angle_rad);
+
 void printArr6x1(float arr[6]);
 void printVect6x1(Vect6f vect);
 void printMatrix4x4(const Matrix4x4& M);
