@@ -2,58 +2,74 @@
 #include "config.h"
 
 EncoderManager::EncoderManager() 
-  : _encoder_list { Encoder(0),
-                    Encoder(1),
-                    Encoder(2),
-                    Encoder(3),
-                    Encoder(4)}
+  : _encoder_list {},
+    _sample_idx(0)
 {
-  _readBuffer  = _bufferA;
-  _writeBuffer = _bufferB; 
-
-  for (int i = 0; i < JOINT_NUM; i++) {
-    _bufferA[i] = {0.0f, false};
-    _bufferB[i] = {0.0f, false};
+  for (int joint_idx = 0; joint_idx < JOINT_NUM; joint_idx++) {
+    _frame_latest.joints[joint_idx] = {0.0f, false};
+    _frame_latest_shared.joints[joint_idx] = {0.0f, false};
   }
+  _frame_latest.frame_idx = 0;
+  _frame_latest.timestamp_us = 0;
+  _frame_latest_shared.frame_idx = 0;
+  _frame_latest_shared.timestamp_us = 0;
 }
+
 
 void EncoderManager::init(){
-  for (int i = 0; i < 5; i++) {
-    _encoder_list[i].init();
+  for (int i = 0; i < JOINT_NUM; i++) {
+    // Skip first because no encoder
+    if (i == 0){
+      continue;
+    }
+    EncoderManager::switchChannel(i-1);
+    delay(2);
+
+    // initialize real encoders
+    _encoder_list[i].initializeI2C();
+    delay(20);
   }
 }
 
-void EncoderManager::updateAngles(){
-
-  // --- Joint 0 (no encoder) ---
-  _writeBuffer[0].angle_deg = 0.0f;   // placeholder
-  _writeBuffer[0].valid = false;      // marking it
-
-  // --- Real encoders ---
-  for (int i = 0; i < 5; i++) {
-    float angle = _encoder_list[i].getAngle();
-
-    _writeBuffer[i + 1].angle_deg = angle;  // shift by 1
-    _writeBuffer[i + 1].valid = true;
-  }
-
-  swapBuffers();  // pointer swap
+EncoderFrame EncoderManager::getLatestFrame() {
+  return _frame_latest_shared;
 }
 
-void EncoderManager::swapBuffers() {
-  noInterrupts();  // short critical section
-  auto temp = _readBuffer;
-  _readBuffer = _writeBuffer;
-  _writeBuffer = temp;
-  interrupts();
+void EncoderManager::updateAngles() {
+  for (int joint_idx = 0; joint_idx < JOINT_NUM; joint_idx++) {
+    // Skip first because no encoder
+    if (joint_idx == 0){
+      _frame_latest.joints[joint_idx].angle_rad = 0.0f;
+      _frame_latest.joints[joint_idx].valid = false;
+      continue;
+    }
+    // Because I only have encoders on first 6 actual channels of the multiplexer
+    // I have to have an offset here...
+    uint8_t mux_channel = joint_idx - 1;
+
+    EncoderManager::switchChannel(mux_channel);
+    delayMicroseconds(20);
+    _frame_latest.joints[joint_idx].angle_rad = DEG_TO_RAD * _encoder_list[joint_idx].angleRead();
+    _frame_latest.joints[joint_idx].valid = true;
+  }
+  _sample_idx += 1;
+  _frame_latest.frame_idx = _sample_idx;
+  _frame_latest.timestamp_us = micros();
+  _frame_latest_shared = _frame_latest;
 }
 
 void EncoderManager::getAngles(float* out_angles) {
-  JointMeasurement* measurements = (JointMeasurement*)_readBuffer;
-
-  for (int i = 0; i < JOINT_NUM; i++) {
-    if (measurements[i].valid) {
-      out_angles[i] = measurements[i].angle_deg - ENCODER_OFFSETS[i];
-    }
+  for (int joint_idx = 0; joint_idx < JOINT_NUM; joint_idx++) {
+    out_angles[joint_idx] = _frame_latest_shared.joints[joint_idx].angle_rad;
   }
+}
+
+void EncoderManager::switchChannel(uint8_t mux_channel){
+  if (mux_channel > 7) {
+    return;
+  }
+
+  Wire.beginTransmission(TCA_ADDR);
+  Wire.write(1u << mux_channel);
+  Wire.endTransmission();
 }

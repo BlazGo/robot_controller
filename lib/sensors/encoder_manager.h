@@ -1,36 +1,34 @@
 #ifndef ENCODER_MANAGER_H
 #define ENCODER_MANAGER_H
 
-#include "encoder.h"
+#include <Arduino.h>
+
+#include "encoder_types.h"
+#include "MT6701.h"
 #include "config.h"
 
-struct JointMeasurement {
-  float angle_deg;
-  bool  valid;
-};
+static constexpr uint8_t TCA_ADDR = 0x70;
 
 class EncoderManager{
   public:
     EncoderManager();
 
-    void init(void);
-    void updateAngles();     // runs on core 1
-
-    // SAFE read (core 0) via buffers
+    void init();
+    void updateAngles();
     void getAngles(float* out_angles);
+    EncoderFrame getLatestFrame();
 
   private:
-    Encoder _encoder_list[5];   // only real encoders
+    MT6701 _encoder_list[JOINT_NUM];
 
-    // double buffer
-    JointMeasurement _bufferA[JOINT_NUM];
-    JointMeasurement _bufferB[JOINT_NUM];
+    // buffer intended for latest measurements (long time to fill)
+    EncoderFrame _frame_latest;
+    // buffer intended for reading (just copy from latest)
+    EncoderFrame _frame_latest_shared;
+    // Sequential number of the measurement
+    uint32_t _sample_idx;
 
-    // Volatile -> variable might change outside of current scope -> prevents compiler optimizations
-    volatile JointMeasurement* _readBuffer;
-    volatile JointMeasurement* _writeBuffer;
-
-    void swapBuffers();
+    void switchChannel(uint8_t index);
 };
 
 #endif
