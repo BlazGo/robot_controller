@@ -203,8 +203,7 @@ bool Robot::updateFromEncoders(){
       return false;
   }
 
-  EncoderFrame _temp;
-  _encoderManager->getLatestFrame(_temp);
+  EncoderFrame _temp = _encoderManager->getLatestFrame();
   /*
   uint32_t timestamp_us = micros();
   // if the timestamp of encoder values is older than 50 ms;
@@ -215,7 +214,7 @@ bool Robot::updateFromEncoders(){
   float encoder_angles[JOINT_NUM] = {0.0f};;
   for (int i=0; i<JOINT_NUM; i++){
     if (_temp.joints[i].valid){
-      encoder_angles[i] = degToRad(_temp.joints[i].angle_deg);
+      encoder_angles[i] = _temp.joints[i].angle_rad;
     }
   }
   return false;

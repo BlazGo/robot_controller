@@ -188,14 +188,13 @@ void printRobotState(void){
 void printEncoderState(void){
   char buffer[128];
 
-  EncoderFrame _temp;
-  encoders.getLatestFrame(_temp);
+  EncoderFrame _temp = encoders.getLatestFrame();
 
   sprintf(buffer,
           "q_enc:     %.2f, %.2f, %.2f, %.2f, %.2f, %.2f [rad]\n"
           "valid:     %d, %d, %d, %d, %d, %d, \n"
           "timestamp: %i",
-          degToRad(_temp.joints[0].angle_deg), degToRad(_temp.joints[1].angle_deg), degToRad(_temp.joints[2].angle_deg), degToRad(_temp.joints[3].angle_deg), degToRad(_temp.joints[4].angle_deg), degToRad(_temp.joints[5].angle_deg),
+          _temp.joints[0].angle_rad, _temp.joints[1].angle_rad, _temp.joints[2].angle_rad, _temp.joints[3].angle_rad, _temp.joints[4].angle_rad, _temp.joints[5].angle_rad,
           _temp.joints[0].valid, _temp.joints[1].valid, _temp.joints[2].valid, _temp.joints[3].valid, _temp.joints[4].valid, _temp.joints[5].valid,
           _temp.timestamp_us
         );
