@@ -4,6 +4,7 @@
 #include "config.h"
 #include "joint.h"
 #include "robot_types.h"
+#include "encoder_manager.h"
 
 #define ANGLE_RAD_SPEED_TOLERANCE 0.0025f
 #define ANGLE_RAD_POSITION_TOLERANCE 0.005f
@@ -47,6 +48,9 @@ class Robot
     float* getMaxJointSpeed();
     float* getMaxJointAcceleration();
     void writePoseToState(Matrix4x4 T_EE);
+    bool updateFromEncoders();
+    void setJointAngles(float q[JOINT_NUM]);
+    void attachEncoderManager(EncoderManager *encoderManager);
 
   private:
     uint32_t last_time;
@@ -56,6 +60,7 @@ class Robot
     uint8_t _enable_pin0; // Pin to enable joints 0, 1, 2
     uint8_t _enable_pin1; // Pin to enable joints 3, 4, 5
 
+    EncoderManager *_encoderManager;
     Joint _joints[JOINT_NUM];
     RobotState _robotState;
     RobotConfig _robotConfig;

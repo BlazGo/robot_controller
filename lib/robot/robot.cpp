@@ -112,6 +112,10 @@ void Robot::update() {
 
 }
 
+void Robot::attachEncoderManager(EncoderManager *encoderManager){
+  _encoderManager = encoderManager;
+}
+
 float Robot::calcTrapTrajBasic(float curr_pos,
                                float curr_vel,
                                float dt,
@@ -192,6 +196,29 @@ void Robot::updateJointStates() {
       break;
     }
   }   
+}
+
+bool Robot::updateFromEncoders(){
+  if (Robot::_encoderManager == nullptr) {
+      return false;
+  }
+
+  EncoderFrame _temp;
+  _encoderManager->getLatestFrame(_temp);
+  /*
+  uint32_t timestamp_us = micros();
+  // if the timestamp of encoder values is older than 50 ms;
+  if ((timestamp_us - _temp.timestamp_us) > 50000){
+    return false;
+  }
+  */
+  float encoder_angles[JOINT_NUM] = {0.0f};;
+  for (int i=0; i<JOINT_NUM; i++){
+    if (_temp.joints[i].valid){
+      encoder_angles[i] = degToRad(_temp.joints[i].angle_deg);
+    }
+  }
+  return false;
 }
 
 void Robot::moveJoint(float target_joint_pose[JOINT_NUM]) {
@@ -325,6 +352,14 @@ float* Robot::getMaxJointAcceleration() {
 }
 
 // ----------- Setters -----------
+void Robot::setJointAngles(float q[JOINT_NUM]){
+  for (int i = 0; i<JOINT_NUM; i++){
+    _joints[i].setCurrentAngle(q[i]);
+    _robotState.q[i] = q[i];
+  }
+  Robot::update();
+}
+
 void Robot::setMaxJointSpeed(float max_speed[JOINT_NUM]) {
   for (int i = 0; i<JOINT_NUM; i++){
     _robotConfig.max_joint_speeds[i] = max_speed[i];
