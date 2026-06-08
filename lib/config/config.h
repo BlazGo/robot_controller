@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include "version.h"
 
 // Choose which MCU you are using (Only pick one) TODO: better selection...
 #define WEACT_RP2350B 0
