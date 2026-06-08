@@ -27,3 +27,12 @@ const float ENCODER_OFFSETS[JOINT_NUM] = {
   284.0f,
   356.0f
 };
+
+const bool MOTOR_DIR_INVERTED[JOINT_NUM] = {
+  false,
+  true,  
+  true,
+  true,
+  false,
+  false  
+};

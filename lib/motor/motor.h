@@ -13,7 +13,7 @@ static constexpr float kSpeedEpsilon = 0.0025f;
 
 class Motor {
     public:
-    Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps);
+    Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps, bool dir_inverted);
 
     void initialize(void);
     void update(void);

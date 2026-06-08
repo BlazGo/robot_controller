@@ -18,6 +18,7 @@ struct JointConfig {
   float gear_ratio;
   long motor_steps_per_joint_rev;
   float angle_tolerance_rad;
+  bool dir_inverted;
 };
 
 struct JointState {

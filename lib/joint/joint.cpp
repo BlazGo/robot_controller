@@ -1,14 +1,15 @@
 #include "joint.h"
 #include "utils.h"
 
-Joint::Joint(uint8_t step_pin, uint8_t dir_pin, uint8_t microsteps, float gear_ratio, float min_angle_rad, float max_angle_rad)
-  :   _motor(step_pin, dir_pin, microsteps)
+Joint::Joint(uint8_t step_pin, uint8_t dir_pin, uint8_t microsteps, float gear_ratio, float min_angle_rad, float max_angle_rad, bool dir_inverted)
+  :   _motor(step_pin, dir_pin, microsteps, dir_inverted)
   {
       _jointConfig.gear_ratio = gear_ratio;
       _jointConfig.min_angle_rad = min_angle_rad;
       _jointConfig.max_angle_rad = max_angle_rad;
       _jointConfig.max_angle_vel_rad_s = 0.0f;
       _jointConfig.max_angle_acc_rad_s2 = 0.0f;
+      _jointConfig.dir_inverted = dir_inverted;
 
       _jointState.angle_rad = 0.0f;
       _jointState.angle_vel_rad_s = 0.0f;
@@ -108,6 +109,15 @@ void Joint::moveToAngle(float angle){
   angle = clampAngleRad(angle);
   _jointState.target_angle_rad = angle;
   _jointState.joint_motion_control_paradigm = JOINT_POSITION_CONTROL;
+}
+
+void Joint::setCurrentAngle(float angle_rad){
+  // Check if within limits
+  float clamped_angle = clampAngleRad(angle_rad);
+  // Set the stepper motors position
+  _motor.setCurrentPositionSteps(angleRadToSteps(clamped_angle));
+  // And update the joint state too
+  _jointState.angle_rad = clamped_angle;
 }
 
 void Joint::setTargetSpeed(float angular_speed){

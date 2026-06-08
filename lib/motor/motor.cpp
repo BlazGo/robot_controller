@@ -2,7 +2,7 @@
 #include "utils.h"
 
 
-Motor::Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps)
+Motor::Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps, bool dir_inverted)
 :   _lastUpdateUs(0U),
     _config{},
     _state{},
@@ -10,6 +10,7 @@ Motor::Motor(uint8_t stepPin, uint8_t directionPin, uint8_t microsteps)
 {
     _config.stepPin = stepPin;
     _config.directionPin = directionPin;
+    _config.dir_inverted = dir_inverted;
     _config.microsteps = (microsteps < 1U) ? 1U : microsteps;
 }
 
@@ -20,6 +21,13 @@ void Motor::initialize() {
     _state.isMoving = _stepper.isRunning();
 
     _config.stepsPerRevolution = STEPPER_STEPS_PER_REV * static_cast<long>(_config.microsteps);
+
+    if (_config.dir_inverted = false) {
+        _stepper.setPinsInverted(false); 
+    }
+    else {
+        _stepper.setPinsInverted(true); 
+    }
 
     setMaxSpeedSteps(MAX_SPEED_STEPS_PER_S);
     setMaxAccelerationSteps(MAX_ACCELERATION_STEPS_PER_S2);

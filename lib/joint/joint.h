@@ -15,7 +15,8 @@ class Joint {
           uint8_t microsteps,
           float gear_ratio,
           float min_angle_rad,
-          float max_angle_rad);
+          float max_angle_rad,
+          bool dir_inverted);
 
     void init(void);
     void update(void);
@@ -24,7 +25,8 @@ class Joint {
     void stop(void);
 
     void moveToAngle(float angle);
-
+    
+    void setCurrentAngle(float angle_rad);
     void setTargetSpeed(float angular_speed);
     void setMaxSpeed(float max_angular_speed);
     void setMaxAcceleration(float max_angular_acceleration);
