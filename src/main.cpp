@@ -6,6 +6,7 @@
 #include "com_interface.h"
 #include "robot.h"
 #include "encoder_manager.h"
+#include "display.h"
 
 void printLoopInfo(void);
 void printJointState(void);
@@ -16,12 +17,14 @@ void robotUpdateTask( void *pvParameters);
 void encoderUpdateTask( void *pv_parameters);
 void IOUpdateTask( void *pv_parameters);
 void printTask( void *pvParameters );
+void displayUpdateTask( void *pvParameters );
 
 volatile uint32_t g_dt_us = 0;
 
 EncoderManager encoders;
 ComHandler com(Serial);
 Robot robot;
+Display display;
 
 void setup() {
   robot.init();
@@ -35,17 +38,17 @@ void setup1() {
   pinMode(BLUE_LED, OUTPUT);
   
   Wire.begin();
-  //Wire1.begin();
   Wire.setClock(100000);
-  //Wire1.setClock(100000);
   
   // Set the serial baudrate
   com.begin(115200);
   encoders.init();
+  display.init();
 
   //xTaskCreate(encoderUpdateTask, "encoderUpdateTask", 4096, nullptr, 1, nullptr);
+  //xTaskCreate(displayUpdateTask, "displayUpdateTask", 4096, nullptr, 2, nullptr);
   xTaskCreate(IOUpdateTask, "IOUpdateTask", 4096, nullptr, 2, nullptr);
-  xTaskCreate(printTask, "printTask", 4096, nullptr, 3, nullptr);
+  xTaskCreate(printTask, "printTask", 8192, nullptr, 3, nullptr);
 }
 
 void loop() {
@@ -114,6 +117,10 @@ void IOUpdateTask(void *pv_parameters) {
   }
 }
 
+void displayUpdateTask(void *pv_parameters) {
+
+}
+
 void encoderUpdateTask(void *pv_parameters) {
   (void)pv_parameters;
 
@@ -131,13 +138,13 @@ void printTask(void *pv_parameters){
   (void)pv_parameters;
 
   for (;;) {
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(BLUE_LED, HIGH);
         
     printLoopInfo();
     printRobotState();
     printEncoderState();
 
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(BLUE_LED, LOW);
 
     // will run at 1000ms + execution time
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -156,7 +163,7 @@ void printLoopInfo(void) {
 }
 
 void printRobotState(void){
-  char buffer[256];
+  char buffer[512];
 
   RobotState rs = robot.getState();
 
@@ -183,6 +190,8 @@ void printRobotState(void){
           rs.robot_motion_control_paradigm
         );
   Serial.println(buffer);
+
+  display.displayInfo(rs.q, rs.x);
 }
 
 void printEncoderState(void){
