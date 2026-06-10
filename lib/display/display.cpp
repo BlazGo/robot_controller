@@ -6,7 +6,7 @@ Display::Display()
 }
 
 void Display::init(){
-  if (!_display.begin(SSD1306_SWITCHCAPVCC , SCREEN_ADDRESS)) {
+  if (!_display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
       Serial.println(F("SSD1306 allocation failed"));
   }
   _display.clearDisplay();
@@ -50,9 +50,4 @@ void Display::displayInfo(float q[JOINT_NUM], float x[6]){
     _display.printf("%.2f", x[i+3]);
   }
   _display.display();
-
-  for (int i=0; i<JOINT_NUM; i++){
-    Serial.print("q["); Serial.print(i); Serial.print("] = "); 
-    Serial.println(q[i]);
-  }
 }
