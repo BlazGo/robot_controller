@@ -7,10 +7,15 @@
 // Choose which MCU you are using (Only pick one) TODO: better selection...
 #define WEACT_RP2350B 0
 #define WEACT_STM32H5 0
-#define RP2040 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+// ================================
+// OLED configuration
+// ================================
+#define SCREEN_WIDTH    128 // OLED display width, in pixels
+#define SCREEN_HEIGHT   64 // OLED display height, in pixels
+#define OLED_RESET      -1
+#define SCREEN_ADDRESS  0x3C
+#define ROBOT_CONTROLLER_VERSION 0.1f
 
 #define JOINT_NUM 6
 
@@ -47,7 +52,7 @@
 #elif (WEACT_RP2350B == 1)
 
   // #define LED_BUILTIN 25
-
+  #define BLUE_LED 25
   #define STEP_PIN_0  28
   #define DIR_PIN_0   27
 

@@ -7,14 +7,7 @@
 
 #include "config.h"
 
-// ================================
-// OLED configuration
-// ================================
-#define SCREEN_WIDTH    128
-#define SCREEN_HEIGHT   64
-#define OLED_RESET      -1
-#define SCREEN_ADDRESS  0x3C
-#define ROBOT_CONTROLLER_VERSION 0.1f
+
 
 class Display{
   public:
