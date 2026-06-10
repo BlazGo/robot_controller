@@ -21,7 +21,15 @@ Robot::Robot()
     _joints[i].init();
     _joints[i].setMotionControlParadigm(JOINT_SPEED_CONTROL);
     _joints[i].setTargetSpeed(0.0f);
+
+    _robotState.q[i] = 0.0f;
+    _robotState.q_dot[i] = 0.0f;
+    _robotState.q_ddot[i] = 0.0f;
+    _robotState.q_target[i] = 0.0f;
+    _robotState.q_dot_target[i] = 0.0f;
   }
+
+
   Robot::setMaxJointSpeed((float*)DEFAULT_JOINT_SPEEDS);
   Robot::setMaxJointAcceleration((float*)DEFAULT_JOINT_ACCELS);}
 
