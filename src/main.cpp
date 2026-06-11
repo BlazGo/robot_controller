@@ -6,6 +6,7 @@
 #include "com_interface.h"
 #include "robot.h"
 #include "encoder_manager.h"
+#include "robot_command_queue.h"
 #include "display.h"
 
 void printLoopInfo(void);
@@ -74,6 +75,14 @@ void robotUpdateTask(void *pv_parameters){
 
   for (;;) {
     const uint32_t t0_us = micros();
+    
+    RobotCommand cmd;
+
+    if (!robot.isBusy()){
+      if (robotCommandPop(&cmd)) {
+        robot.acceptCommand(cmd);
+      }
+    }
 
     // robot.updateFromEncoders(); // this has old data... hmmmm is it still useful and how?
     robot.update();
@@ -90,29 +99,7 @@ void IOUpdateTask(void *pv_parameters) {
 
   for (;;) {
     com.update();
-/*
-    if (com.cmdReady) {
-      switch (com.cmd_robot.type) {
-        case CMD_JOINT_MOVE:
-          robot.moveJoint(com.cmd_robot.params);
-          break;
 
-        case CMD_CART_MOVE:
-          robot.moveCart(com.cmd_robot.params);
-          break;
-
-        case CMD_SET_MAX_JOINT_SPEED:
-          robot.setMaxJointSpeed(com.cmd_robot.params);
-          break;
-
-        case CMD_SET_MAX_JOINT_ACCELERATION:
-          robot.setMaxJointAcceleration(com.cmd_robot.params);
-          break;
-        }
-        com.cmdReady = false;
-    }
-*/
-    // will run at 5ms + execution time
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -176,16 +163,16 @@ void printRobotState(void){
           "              %.2f, %.2f, %.2f [rad]\n"
           "x_target:     %.1f, %.1f, %.1f [mm] \n"
           "              %.2f, %.2f, %.2f [rad]\n"
-          "moving:    %d\n"
-          "err_state: %d\n"
-          "mode:      %d (0-Cart, 1-Joint)\n",
+          "exec_state:   %d\n"
+          "err_state:    %d\n"
+          "mode:         %d (0-Cart, 1-Joint)\n",
           rs.q[0], rs.q[1], rs.q[2], rs.q[3], rs.q[4], rs.q[5],
           rs.q_target[0], rs.q_target[1], rs.q_target[2], rs.q_target[3], rs.q_target[4], rs.q_target[5],
           rs.q_dot[0], rs.q_dot[1], rs.q_dot[2], rs.q_dot[3], rs.q_dot[4], rs.q_dot[5],
           rs.q_dot_target[0], rs.q_dot_target[1], rs.q_dot_target[2], rs.q_dot_target[3], rs.q_dot_target[4], rs.q_dot_target[5],
           rs.x[0], rs.x[1], rs.x[2], rs.x[3], rs.x[4], rs.x[5],
           rs.x_target[0], rs.x_target[1], rs.x_target[2], rs.x_target[3], rs.x_target[4], rs.x_target[5],
-          rs.moving,
+          rs.exec_state,
           rs.robot_error_state,
           rs.robot_motion_control_paradigm
         );

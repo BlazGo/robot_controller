@@ -2,72 +2,94 @@
 #define ROBOT_H
 
 #include "config.h"
-#include "joint.h"
-#include "robot_types.h"
 #include "encoder_manager.h"
+#include "joint.h"
+#include "robot_command_queue.h"
 #include "robot_state_shared.h"
+#include "robot_types.h"
 
-#define ANGLE_RAD_SPEED_TOLERANCE 0.0025f
-#define ANGLE_RAD_POSITION_TOLERANCE 0.005f
- 
 struct DHParam {
-  float theta;
-  float alpha;
-  float d;
-  float a;
+    float theta;
+    float alpha;
+    float d;
+    float a;
 };
 
-const DHParam dh_table[JOINT_NUM] = {
-  { 0.0f,     -PI / 2.0f, 102.0f,  0.0f   },  // joint 0
-  { -PI/2.0f, 0.0f,       0.0f,    210.0f },  // joint 1
-  { 0.0f,     -PI / 2.0f, 0.0f,    0.0f   },  // joint 2
-  { 0.0f,     PI / 2.0f,  202.0f,  0.0f   },  // joint 3
-  { PI,       PI / 2.0f,  0.0f,    0.0f   },  // joint 4
-  { 0.0f,     0.0f,       43.5f,   0.0f   }   // joint 5
+inline constexpr float kAngleRadSpeedTolerance = 0.0025f;
+inline constexpr float kAngleRadPositionTolerance = 0.005f;
+
+inline constexpr DHParam dh_table[JOINT_NUM] = {
+    { 0.0f,     -PI / 2.0f, 102.0f,   0.0f   },  // joint 0
+    { -PI / 2.0f, 0.0f,       0.0f,   210.0f },  // joint 1
+    { 0.0f,     -PI / 2.0f,   0.0f,   0.0f   },  // joint 2
+    { 0.0f,      PI / 2.0f, 202.0f,   0.0f   },  // joint 3
+    { PI,        PI / 2.0f,   0.0f,   0.0f   },  // joint 4
+    { 0.0f,      0.0f,       43.5f,   0.0f   }   // joint 5
 };
 
-class Robot
-{
-  public:
+class Robot {
+public:
     Robot();
 
     void init();
     void update();
+
     void enable();
     void disable();
-    RobotState getState();
 
     void moveJoint(float target_joint_pose[JOINT_NUM]);
     void moveCart(float target_cart_pose[6]);
-    void setMaxJointSpeed(float max_speed[JOINT_NUM]);
-    void setMaxJointAcceleration(float max_accel[JOINT_NUM]);
-    void computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]);
-    void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J));
-    void computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot);
-    Vect6f computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]);
-    float calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel);
+
+    void setJointAngles(const float q[JOINT_NUM]);
+    void setMaxJointSpeed(const float max_speed[JOINT_NUM]);
+    void setMaxJointAcceleration(const float max_accel[JOINT_NUM]);
+
+    void attachEncoderManager(EncoderManager* encoderManager);
+    bool acceptCommand(const RobotCommand& cmd);
+
+    RobotState getState();
     float* getMaxJointSpeed();
     float* getMaxJointAcceleration();
-    void writePoseToState(Matrix4x4 T_EE);
-    bool updateFromEncoders();
-    void setJointAngles(float q[JOINT_NUM]);
-    void attachEncoderManager(EncoderManager *encoderManager);
-    void sharedWriteRobotState(const RobotState &rs);
 
-  private:
-    uint32_t last_time;
+    bool isBusy() const;
+    bool isMoving() const;
+    RobotExecState computeExecState() const;
 
-    char _output_buffer[128];
+    void computeForwardKinematics(const float (&q)[JOINT_NUM],
+                                  Matrix4x4 (&T)[JOINT_NUM + 1]);
+    void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1],
+                                  Matrix6x6 (&J));
+    void computeDLSMethod(float (&q_dot)[JOINT_NUM],
+                          const Matrix6x6 (&J),
+                          Vect6f x_dot);
+    Vect6f computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]);
+    float calcTrapTrajBasic(float curr_pos,
+                            float curr_vel,
+                            float dt,
+                            float goal,
+                            float max_vel,
+                            float max_accel);
 
-    uint8_t _enable_pin0; // Pin to enable joints 0, 1, 2
-    uint8_t _enable_pin1; // Pin to enable joints 3, 4, 5
-
-    EncoderManager *_encoderManager;
-    Joint _joints[JOINT_NUM];
-    RobotState _robotState;
-    RobotConfig _robotConfig;
-    RobotPlanner _robotPlanner;
+private:
+    float getDeltaTimeSec();
     void updateJointStates();
+    void updateCartesianPlan(const Matrix4x4 (&transforms)[JOINT_NUM + 1]);
+    void updateJointPlan(float dt);
+    void applyPlannedJointSpeeds();
+    void writePoseToState(Matrix4x4 T_EE);
+
+    uint32_t last_time = 0;
+
+    uint8_t _enable_pin0;  // Enables joints 0, 1, 2
+    uint8_t _enable_pin1;  // Enables joints 3, 4, 5
+
+    EncoderManager* _encoderManager = nullptr;
+    Joint _joints[JOINT_NUM];
+    RobotState _robotState{};
+    RobotConfig _robotConfig{};
+    RobotPlanner _robotPlanner{};
 };
 
-#endif // ROBOT_H
+void sharedWriteRobotState(const RobotState& rs);
+
+#endif  // ROBOT_H

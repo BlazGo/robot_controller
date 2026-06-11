@@ -42,8 +42,8 @@ Matrix3x3 transposeMat(Matrix3x3 mat);
 Matrix6x6 transposeMat(Matrix6x6 mat);
 
 Matrix3x3 getRotationMatrixFromPoseMatrix(const Matrix4x4& M);
-Matrix3x3 eulerAnglesToRotationMatrix(float euler[3]);
-Vect3f rotationMatrixToEulerAngles(Matrix3x3& M);
+Matrix3x3 eulerAnglesToRotationMatrix(const float euler[3]);
+Vect3f rotationMatrixToEulerAngles(const Matrix3x3& M);
 Vect3f eulRadToDeg(Vect3f& eulAngles);
 
 float degToRad(float angle_deg);

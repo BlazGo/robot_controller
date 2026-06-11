@@ -5,6 +5,15 @@
 #include "config.h"
 #include "joint_types.h"
 
+enum RobotExecState {
+    ROBOT_IDLE = 0,
+    ROBOT_EXECUTING,
+    ROBOT_DONE,
+    ROBOT_ERROR,
+    ROBOT_STOPPING,
+    ROBOT_STOPPED
+};
+
 enum class robot_error_state_t{
   NO_ERROR,
   LIMIT_HIT_MIN,
@@ -38,10 +47,11 @@ struct RobotState{
 
   Matrix4x4 T_EE;       // cartesian EE pose as matrix
   
-  bool enabled;         // whether or not motors are enabled
-  bool ready;           // ready for command or busy
-  bool moving;          // if any joint is moving -> the robot is moving
-
+  bool motors_enabled;  // whether or not motors are enabled
+  RobotExecState exec_state; 
+  bool stop_requested;
+  bool command_completed;
+  
   robot_motion_control_paradigm_t robot_motion_control_paradigm;
 
   robot_error_state_t robot_error_state;

@@ -218,7 +218,7 @@ Matrix3x3 getRotationMatrixFromPoseMatrix(const Matrix4x4& M){
   return rotM;
 }
 
-Matrix3x3 eulerAnglesToRotationMatrix(float euler[3]){
+Matrix3x3 eulerAnglesToRotationMatrix(const float euler[3]){
   Matrix3x3 rotM;
 
   float psi   = euler[2]; // Z yaw
@@ -238,7 +238,7 @@ Matrix3x3 eulerAnglesToRotationMatrix(float euler[3]){
   return rotM;
 }
 
-Vect3f rotationMatrixToEulerAngles(Matrix3x3& M){
+Vect3f rotationMatrixToEulerAngles(const Matrix3x3& M){
   Vect3f eulAngles;
   eulAngles.v[1] = -asin(M.m[2][0]);
   

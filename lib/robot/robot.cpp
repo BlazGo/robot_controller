@@ -1,23 +1,26 @@
 #include "robot.h"
 #include "utils.h"
 
+namespace {
+constexpr float kPosGain = 0.9f;
+constexpr float kRotGain = 0.3f;
+constexpr float kDamping = 0.1f;
+}
 
 Robot::Robot()
-: _enable_pin0(ENABLE_PIN_0),
-  _enable_pin1(ENABLE_PIN_1),
-  _encoderManager(nullptr),
-  _joints {Joint(STEP_PIN_0, DIR_PIN_0, MICROSTEPS_0, GEAR_RATIO_0, MIN_ANGLE_0, MAX_ANGLE_0, MOTOR_DIR_INVERTED[0]),
-           Joint(STEP_PIN_1, DIR_PIN_1, MICROSTEPS_1, GEAR_RATIO_1, MIN_ANGLE_1, MAX_ANGLE_1, MOTOR_DIR_INVERTED[1]),
-           Joint(STEP_PIN_2, DIR_PIN_2, MICROSTEPS_2, GEAR_RATIO_2, MIN_ANGLE_2, MAX_ANGLE_2, MOTOR_DIR_INVERTED[2]),
-           Joint(STEP_PIN_3, DIR_PIN_3, MICROSTEPS_3, GEAR_RATIO_3, MIN_ANGLE_3, MAX_ANGLE_3, MOTOR_DIR_INVERTED[3]),
-           Joint(STEP_PIN_4, DIR_PIN_4, MICROSTEPS_4, GEAR_RATIO_4, MIN_ANGLE_4, MAX_ANGLE_4, MOTOR_DIR_INVERTED[4]),
-           Joint(STEP_PIN_5, DIR_PIN_5, MICROSTEPS_5, GEAR_RATIO_5, MIN_ANGLE_5, MAX_ANGLE_5, MOTOR_DIR_INVERTED[5])
-           }
+  : _enable_pin0(ENABLE_PIN_0),
+    _enable_pin1(ENABLE_PIN_1),
+    _encoderManager(nullptr),
+    _joints{Joint(STEP_PIN_0, DIR_PIN_0, MICROSTEPS_0, GEAR_RATIO_0, MIN_ANGLE_0, MAX_ANGLE_0, MOTOR_DIR_INVERTED[0]),
+            Joint(STEP_PIN_1, DIR_PIN_1, MICROSTEPS_1, GEAR_RATIO_1, MIN_ANGLE_1, MAX_ANGLE_1, MOTOR_DIR_INVERTED[1]),
+            Joint(STEP_PIN_2, DIR_PIN_2, MICROSTEPS_2, GEAR_RATIO_2, MIN_ANGLE_2, MAX_ANGLE_2, MOTOR_DIR_INVERTED[2]),
+            Joint(STEP_PIN_3, DIR_PIN_3, MICROSTEPS_3, GEAR_RATIO_3, MIN_ANGLE_3, MAX_ANGLE_3, MOTOR_DIR_INVERTED[3]),
+            Joint(STEP_PIN_4, DIR_PIN_4, MICROSTEPS_4, GEAR_RATIO_4, MIN_ANGLE_4, MAX_ANGLE_4, MOTOR_DIR_INVERTED[4]),
+            Joint(STEP_PIN_5, DIR_PIN_5, MICROSTEPS_5, GEAR_RATIO_5, MIN_ANGLE_5, MAX_ANGLE_5, MOTOR_DIR_INVERTED[5])}
 {
-  
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
 
-  for (int i = 0; i < JOINT_NUM; i++) {
+  for (int i = 0; i < JOINT_NUM; ++i) {
     _joints[i].init();
     _joints[i].setMotionControlParadigm(JOINT_SPEED_CONTROL);
     _joints[i].setTargetSpeed(0.0f);
@@ -27,205 +30,208 @@ Robot::Robot()
     _robotState.q_ddot[i] = 0.0f;
     _robotState.q_target[i] = 0.0f;
     _robotState.q_dot_target[i] = 0.0f;
+    _robotPlanner.q_planned[i] = 0.0f;
   }
 
+  setMaxJointSpeed(DEFAULT_JOINT_SPEEDS);
+  setMaxJointAcceleration(DEFAULT_JOINT_ACCELS);
+}
 
-  Robot::setMaxJointSpeed((float*)DEFAULT_JOINT_SPEEDS);
-  Robot::setMaxJointAcceleration((float*)DEFAULT_JOINT_ACCELS);}
 
 void Robot::init() {
   pinMode(_enable_pin0, OUTPUT);
   pinMode(_enable_pin1, OUTPUT);
-
-  Robot::disable();
+  disable();
   last_time = micros();
 }
 
 void Robot::update() {
-  // Loop timing
-  float dt = (micros() - last_time) / 1000000.0;
-  last_time = micros();
-  
-  Robot::updateJointStates();
+  const float dt = getDeltaTimeSec();
 
-  // Calculate EE pose from T transform matrices
-  Matrix4x4 T_matrices[JOINT_NUM + 1];
-  computeForwardKinematics(_robotState.q, T_matrices);
+  updateJointStates();
 
-  // Extract the data and update x and T_EE
-  writePoseToState(T_matrices[JOINT_NUM]);
+  Matrix4x4 transforms[JOINT_NUM + 1];
+  computeForwardKinematics(_robotState.q, transforms);
+  writePoseToState(transforms[JOINT_NUM]);
 
-  float q_calc[JOINT_NUM] = {0.0f};
+  switch (_robotState.robot_motion_control_paradigm) {
+    case robot_motion_control_paradigm_t::ROBOT_CART_CONTROL:
+      updateCartesianPlan(transforms);
+      break;
 
-  float err_norm = 0.0f;
-  float ori_err = 0.0f;
-  float Kp = 0.9f;
-  float Kr = 0.3f;
-  Vect6f err;
-  Vect6f x_dot;
+    case robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL:
+      updateJointPlan(dt);
+      break;
 
-  switch (_robotState.robot_motion_control_paradigm)
-  {
-  case robot_motion_control_paradigm_t::ROBOT_CART_CONTROL:
-    Matrix6x6 Jg;
-    computeGeometricJacobian(T_matrices, Jg);
-    
-    err = computeCartErr(_robotState.T_EE, _robotState.x_target);
-    
-    // Construct the desired control via error
-    for (int i = 0; i < 3; i++) {
-      x_dot.v[i]     = Kp * err.v[i];
-      x_dot.v[i + 3] = Kr * err.v[i + 3];
-    }
-
-    // Calculate normalized? position error
-    err_norm = sqrt(err.v[0]*err.v[0] +
-                    err.v[1]*err.v[1] +
-                    err.v[2]*err.v[2]);
-
-    ori_err = sqrt(err.v[3]*err.v[3] +
-                   err.v[4]*err.v[4] +
-                   err.v[5]*err.v[5]);
-                      
-    // will save the calculated q_dot in the struct array
-    computeDLSMethod(q_calc, Jg, x_dot);
-    
-    for (int i=0; i<JOINT_NUM; i++){
-      _robotPlanner.q_planned[i] = q_calc[i];
-    }
-
-    break;  
-  case robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL:
-    for (int i=0; i<JOINT_NUM; i++){
-      q_calc[i] = calcTrapTrajBasic(_robotState.q[i],
-                                    _robotPlanner.q_planned[i],
-                                    dt,
-                                    _robotState.q_target[i],
-                                    _robotConfig.max_joint_speeds[i],
-                                    _robotConfig.max_joint_accelerations[i]);
-      
-      _robotPlanner.q_planned[i] = q_calc[i];
-    }
-  break;  
-  
-  default:
-    break;
+    default:
+      break;
   }
 
-  // Finally set the target speed
-  for (int i=0; i<JOINT_NUM; i++){
-    _joints[i].setTargetSpeed(_robotPlanner.q_planned[i]);
-    _robotState.q_dot_target[i] = _robotPlanner.q_planned[i];
-  }
+  applyPlannedJointSpeeds();
+}
 
+void Robot::updateCartesianPlan(const Matrix4x4 (&transforms)[JOINT_NUM + 1]) {
+    Matrix6x6 jacobian;
+    computeGeometricJacobian(transforms, jacobian);
+
+    const Vect6f error = computeCartErr(_robotState.T_EE, _robotState.x_target);
+
+    Vect6f x_dot{};
+    for (int i = 0; i < 3; ++i) {
+        x_dot.v[i] = kPosGain * error.v[i];
+        x_dot.v[i + 3] = kRotGain * error.v[i + 3];
+    }
+
+    float q_dot[JOINT_NUM] = {0.0f};
+    computeDLSMethod(q_dot, jacobian, x_dot);
+
+    for (int i = 0; i < JOINT_NUM; ++i) {
+        _robotPlanner.q_planned[i] = q_dot[i];
+    }
+}
+
+void Robot::updateJointPlan(float dt) {
+    for (int i = 0; i < JOINT_NUM; ++i) {
+        _robotPlanner.q_planned[i] = calcTrapTrajBasic(
+            _robotState.q[i],
+            _robotPlanner.q_planned[i],
+            dt,
+            _robotState.q_target[i],
+            _robotConfig.max_joint_speeds[i],
+            _robotConfig.max_joint_accelerations[i]);
+    }
+}
+
+void Robot::applyPlannedJointSpeeds() {
+    for (int i = 0; i < JOINT_NUM; ++i) {
+        _joints[i].setTargetSpeed(_robotPlanner.q_planned[i]);
+        _robotState.q_dot_target[i] = _robotPlanner.q_planned[i];
+    }
+}
+
+float Robot::getDeltaTimeSec() {
+    const uint32_t now = micros();
+    const float dt = (now - last_time) * 1e-6f;
+    last_time = now;
+    return dt;
 }
 
 void Robot::attachEncoderManager(EncoderManager *encoderManager){
   _encoderManager = encoderManager;
 }
 
-float Robot::calcTrapTrajBasic(float curr_pos,
-                               float curr_vel,
-                               float dt,
-                               float goal,
-                               float max_vel,
-                               float max_accel)
-{
-    float error = goal - curr_pos;
+float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel) {
+    const float error = goal - curr_pos;
 
-    if (fabsf(error) < ANGLE_RAD_POSITION_TOLERANCE) {
+    if (fabsf(error) < kAngleRadPositionTolerance) {
         return 0.0f;
     }
 
-    float dir_to_goal = sign(error);
-    float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
-    float vel_toward_goal = curr_vel * dir_to_goal;
+    const float dir_to_goal = sign(error);
+    const float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
+    const float vel_toward_goal = curr_vel * dir_to_goal;
 
-    float calc_accel = 0.0f;
+    float accel = 0.0f;
 
     if (vel_toward_goal < 0.0f) {
-        calc_accel = dir_to_goal * max_accel;
+        accel = dir_to_goal * max_accel;
     } else if (fabsf(error) <= d_stop) {
-        calc_accel = -sign(curr_vel) * max_accel;
+        accel = -sign(curr_vel) * max_accel;
     } else if (fabsf(curr_vel) < max_vel) {
-        calc_accel = dir_to_goal * max_accel;
-    } else {
-        calc_accel = 0.0f;
+        accel = dir_to_goal * max_accel;
     }
 
-    float calc_vel = curr_vel + calc_accel * dt;
-    return clampAbsFloat(calc_vel, max_vel);
+    const float new_vel = curr_vel + accel * dt;
+    return clampAbsFloat(new_vel, max_vel);
 }
 
-void Robot::writePoseToState(Matrix4x4 T_EE){
+void Robot::writePoseToState(Matrix4x4 T_EE) {
   _robotState.T_EE = T_EE;
-  _robotState.x[0] = _robotState.T_EE.m[0][3];
-  _robotState.x[1] = _robotState.T_EE.m[1][3];
-  _robotState.x[2] = _robotState.T_EE.m[2][3];
-  Matrix3x3 _temp_rot = getRotationMatrixFromPoseMatrix(_robotState.T_EE);
-  Vect3f _temp_eul = rotationMatrixToEulerAngles(_temp_rot);
-  _robotState.x[3] = _temp_eul.v[0];
-  _robotState.x[4] = _temp_eul.v[1];
-  _robotState.x[5] = _temp_eul.v[2];
+
+  _robotState.x[0] = T_EE.m[0][3];
+  _robotState.x[1] = T_EE.m[1][3];
+  _robotState.x[2] = T_EE.m[2][3];
+
+  const Matrix3x3 rot = getRotationMatrixFromPoseMatrix(T_EE);
+  const Vect3f eul = rotationMatrixToEulerAngles(rot);
+
+  _robotState.x[3] = eul.v[0];
+  _robotState.x[4] = eul.v[1];
+  _robotState.x[5] = eul.v[2];
 }
 
 void Robot::enable() {
   digitalWrite(_enable_pin0, LOW);
   digitalWrite(_enable_pin1, LOW);
-  _robotState.enabled = true;
+  _robotState.motors_enabled = true;
 }
 
 void Robot::disable(){
   digitalWrite(_enable_pin0, HIGH);
   digitalWrite(_enable_pin1, HIGH);
-  _robotState.enabled = false;
+  _robotState.motors_enabled = false;
 }
 
 void Robot::updateJointStates() {
-  for (int i=0; i<JOINT_NUM; i++){
-    _joints[i].update();
+  _robotState.robot_error_state = robot_error_state_t::NO_ERROR;
 
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    _joints[i].update();
     _robotState.joints[i] = _joints[i].getState();
 
     _robotState.q[i] = _robotState.joints[i].angle_rad;
     _robotState.q_dot[i] = _robotState.joints[i].angle_vel_rad_s;
 
-    if (_robotState.joints[i].at_min_lim){
+    if (_robotState.joints[i].at_min_lim) {
       _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MIN;
-    }
-    else if (_robotState.joints[i].at_max_lim){
+    } else if (_robotState.joints[i].at_max_lim) {
       _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MAX;
     }
   }
-  _robotState.moving = false;
-  for (int i = 0; i < JOINT_NUM; ++i) {
-    if (_robotState.joints[i].moving) {
-      _robotState.moving = true;
-      break;
-    }
-  }   
+
+  _robotState.exec_state = computeExecState();
 }
 
-bool Robot::updateFromEncoders(){
-  if (Robot::_encoderManager == nullptr) {
-      return false;
-  }
-
-  EncoderFrame _temp = _encoderManager->getLatestFrame();
-  /*
-  uint32_t timestamp_us = micros();
-  // if the timestamp of encoder values is older than 50 ms;
-  if ((timestamp_us - _temp.timestamp_us) > 50000){
-    return false;
-  }
-  */
-  float encoder_angles[JOINT_NUM] = {0.0f};;
-  for (int i=0; i<JOINT_NUM; i++){
-    if (_temp.joints[i].valid){
-      encoder_angles[i] = _temp.joints[i].angle_rad;
+bool Robot::isMoving() const {
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    if (_robotState.joints[i].moving) {
+      return true;
     }
   }
   return false;
+}
+
+RobotExecState Robot::computeExecState() const {
+  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
+    return ROBOT_ERROR;
+  }
+
+  if (_robotState.stop_requested) {
+    return ROBOT_STOPPING;
+  }
+
+  if (isMoving()) {
+    return ROBOT_EXECUTING;
+  }
+
+  if (_robotState.command_completed) {
+    return ROBOT_DONE;
+  }
+  return ROBOT_IDLE;
+}
+
+bool Robot::isBusy() const {
+  switch (_robotState.exec_state) {
+    case ROBOT_IDLE:
+    case ROBOT_DONE:
+      return false;
+
+    case ROBOT_EXECUTING:
+    case ROBOT_STOPPING:
+    case ROBOT_ERROR:
+    default:
+      return true;
+  }
 }
 
 void Robot::moveJoint(float target_joint_pose[JOINT_NUM]) {
@@ -314,36 +320,74 @@ void Robot::computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Ve
     }
   }
   for (int i=0; i<6; i++){
+    q_dot[i] = 0.0f;
     for (int j=0; j<6; j++){
       q_dot[i] += J_T.m[i][j] * temp[j];
     }
   }
 }
 
-Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]){
-  Vect3f err_p; 
-  Vect3f err_r;
-  
-  // Position error
-  for (int i=0; i<3; i++){
-    err_p.v[i] = x_goal[i] - T_curr.m[i][3];
-  }
+Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]) {
+    Vect6f err{};
 
-  // Rotation error
-  float goal_angles[3] = {x_goal[3], x_goal[4], x_goal[5]};
-  Matrix3x3 R_goal = eulerAnglesToRotationMatrix(goal_angles);
-  err_r = computeRotErrMat(R_goal, getRotationMatrixFromPoseMatrix(T_curr));
+    for (int i = 0; i < 3; ++i) {
+        err.v[i] = x_goal[i] - T_curr.m[i][3];
+    }
 
-  Vect6f err;
-  err.v[0] = err_p.v[0];
-  err.v[1] = err_p.v[1];
-  err.v[2] = err_p.v[2];
-  err.v[3] = err_r.v[0];
-  err.v[4] = err_r.v[1];
-  err.v[5] = err_r.v[2];
-  return err;
+    const float goal_angles[3] = {x_goal[3], x_goal[4], x_goal[5]};
+    const Matrix3x3 R_goal = eulerAnglesToRotationMatrix(goal_angles);
+    const Vect3f err_r = computeRotErrMat(R_goal, getRotationMatrixFromPoseMatrix(T_curr));
+
+    err.v[3] = err_r.v[0];
+    err.v[4] = err_r.v[1];
+    err.v[5] = err_r.v[2];
+
+    return err;
 }
 
+bool Robot::acceptCommand(const RobotCommand& cmd) {
+  switch (cmd.type){
+    case RobotCommandType::SET_MAX_JOINT_SPEEDS:
+      setMaxJointSpeed(cmd.q);
+      _robotState.command_completed = true;
+      return true;
+    case RobotCommandType::SET_MAX_JOINT_ACCELERATIONS:
+      setMaxJointAcceleration(cmd.q);
+      _robotState.command_completed = true;
+      return true;
+    default:
+      return false;
+  }
+    
+}
+
+void sharedWriteRobotState(const RobotState &rs) {
+    static uint32_t update_counter = 0;
+
+    RobotSharedState snap{};
+
+    for (int i = 0; i < JOINT_NUM; ++i) {
+        snap.q_rad[i] = rs.q[i];
+        snap.q_target_rad[i] = rs.q_target[i];
+        snap.q_dot_rad[i] = rs.q_dot[i];
+        snap.q_dot_target_rad[i] = rs.q_dot_target[i];
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        snap.x_mm[i] = rs.x[i];
+        snap.x_rad[i] = rs.x[i + 3];
+        snap.x_target_mm[i] = rs.x_target[i];
+        snap.x_target_rad[i] = rs.x_target[i + 3];
+    }
+
+    snap.moving = rs.exec_state;
+    snap.robot_error_state = rs.robot_error_state;
+    snap.robot_motion_mode = rs.robot_motion_control_paradigm;
+    snap.timestamp_us = micros();
+    snap.update_counter = ++update_counter;
+
+    g_robot_shared_state = snap;
+}
 
 // ----------- Getters -----------
 RobotState Robot::getState(){
@@ -359,22 +403,22 @@ float* Robot::getMaxJointAcceleration() {
 }
 
 // ----------- Setters -----------
-void Robot::setJointAngles(float q[JOINT_NUM]){
+void Robot::setJointAngles(const float q[JOINT_NUM]){
   for (int i = 0; i<JOINT_NUM; i++){
     _joints[i].setCurrentAngle(q[i]);
     _robotState.q[i] = q[i];
   }
-  Robot::update();
+  update();
 }
 
-void Robot::setMaxJointSpeed(float max_speed[JOINT_NUM]) {
+void Robot::setMaxJointSpeed(const float max_speed[JOINT_NUM]) {
   for (int i = 0; i<JOINT_NUM; i++){
     _robotConfig.max_joint_speeds[i] = max_speed[i];
     _joints[i].setMaxSpeed(max_speed[i]);
   }
 }
 
-void Robot::setMaxJointAcceleration(float max_accel[JOINT_NUM]) {
+void Robot::setMaxJointAcceleration(const float max_accel[JOINT_NUM]) {
   for (int i = 0; i<JOINT_NUM; i++){
     _robotConfig.max_joint_accelerations[i] = max_accel[i];
     _joints[i].setMaxAcceleration(max_accel[i]);
