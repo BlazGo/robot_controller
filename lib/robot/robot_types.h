@@ -51,7 +51,11 @@ struct RobotState{
   RobotExecState exec_state; 
   bool stop_requested;
   bool command_completed;
-  
+
+  bool command_active;
+  RobotCommandType active_cmd_type;
+  uint32_t active_cmd_id;
+
   robot_motion_control_paradigm_t robot_motion_control_paradigm;
 
   robot_error_state_t robot_error_state;

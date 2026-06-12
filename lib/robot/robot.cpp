@@ -47,7 +47,7 @@ void Robot::init() {
 
 void Robot::update() {
   const float dt = getDeltaTimeSec();
-
+  
   updateJointStates();
 
   Matrix4x4 transforms[JOINT_NUM + 1];
@@ -347,15 +347,46 @@ Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]) {
 }
 
 bool Robot::acceptCommand(const RobotCommand& cmd) {
+  // accept command only if not in error state
+  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
+    return false;
+  }
+  
   switch (cmd.type){
+
     case RobotCommandType::SET_MAX_JOINT_SPEEDS:
       setMaxJointSpeed(cmd.q);
       _robotState.command_completed = true;
       return true;
+
     case RobotCommandType::SET_MAX_JOINT_ACCELERATIONS:
       setMaxJointAcceleration(cmd.q);
       _robotState.command_completed = true;
       return true;
+
+    case RobotCommandType::CONTROL_PARADIGM_CHANGE:
+      setMotionControlParadigm(static_cast<robot_motion_control_paradigm_t>(cmd.id_int));
+      _robotState.command_completed = true;
+      return true;
+
+    case RobotCommandType::JOINT_MOVE:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      _robotState.command_completed = false;
+      _robotState.stop_requested = false;
+      moveJoint(cmd.q);
+      return true;
+
+    case RobotCommandType::CART_MOVE:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      _robotState.command_completed = false;
+      _robotState.stop_requested = false;
+      moveCart(cmd.x);
+      return true;
+
     default:
       return false;
   }

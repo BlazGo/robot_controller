@@ -78,13 +78,15 @@ void robotUpdateTask(void *pv_parameters){
     
     RobotCommand cmd;
 
+    // if robot is avaliable for work
     if (!robot.isBusy()){
+      // pop the command
       if (robotCommandPop(&cmd)) {
+        // and (start) execute it
         robot.acceptCommand(cmd);
       }
     }
 
-    // robot.updateFromEncoders(); // this has old data... hmmmm is it still useful and how?
     robot.update();
 
     // calculate how muct time the loop took
@@ -98,7 +100,50 @@ void IOUpdateTask(void *pv_parameters) {
   (void)pv_parameters;
 
   for (;;) {
+    // continuously update com port (read buffer)
     com.update();
+
+    // if command detected parse it and put into queue
+    if (com.cmdReady) {
+      Serial.println(com.com_cmd_robot.type);
+      RobotCommand robot_cmd;
+
+      switch (com.com_cmd_robot.type) {
+        
+        case CMD_JOINT_MOVE:
+          robot_cmd.type = RobotCommandType::JOINT_MOVE;
+          for (uint8_t joint_idx = 0; joint_idx < JOINT_NUM; ++joint_idx) {
+            robot_cmd.q[joint_idx] = com.com_cmd_robot.params[joint_idx];
+          }
+        break;
+        
+        case CMD_CART_MOVE:
+          robot_cmd.type = RobotCommandType::CART_MOVE;
+          for (uint8_t pose_idx = 0; pose_idx < 6; ++pose_idx) {
+            robot_cmd.x[pose_idx] = com.com_cmd_robot.params[pose_idx];
+          }
+        break;
+
+        case CMD_SET_MAX_JOINT_SPEED:
+          robot_cmd.type = RobotCommandType::SET_MAX_JOINT_SPEEDS;
+          for (uint8_t param_idx = 0; param_idx < JOINT_NUM; ++param_idx) {
+            robot_cmd.x[param_idx] = com.com_cmd_robot.params[param_idx];
+          }
+        break;
+
+        case CMD_SET_MAX_JOINT_ACCELERATION:
+          robot_cmd.type = RobotCommandType::SET_MAX_JOINT_ACCELERATIONS;
+          for (uint8_t param_idx = 0; param_idx < JOINT_NUM; ++param_idx) {
+            robot_cmd.x[param_idx] = com.com_cmd_robot.params[param_idx];
+          }
+        break;
+
+        default:
+        break;
+      }
+      robotCommandPush(&robot_cmd);
+      com.cmdReady = false;
+    }
 
     vTaskDelay(pdMS_TO_TICKS(5));
   }
@@ -134,7 +179,7 @@ void printTask(void *pv_parameters){
     digitalWrite(BLUE_LED, LOW);
 
     // will run at 1000ms + execution time
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -165,6 +210,7 @@ void printRobotState(void){
           "              %.2f, %.2f, %.2f [rad]\n"
           "exec_state:   %d\n"
           "err_state:    %d\n"
+          "mode:         %d (0-Cart, 1-Joint)\n"
           "timestamp:    %u \n",
           rs.q[0], rs.q[1], rs.q[2], rs.q[3], rs.q[4], rs.q[5],
           rs.q_target[0], rs.q_target[1], rs.q_target[2], rs.q_target[3], rs.q_target[4], rs.q_target[5],
@@ -174,6 +220,7 @@ void printRobotState(void){
           rs.x_target[0], rs.x_target[1], rs.x_target[2], rs.x_target[3], rs.x_target[4], rs.x_target[5],
           rs.exec_state,
           rs.robot_error_state,
+          rs.robot_motion_control_paradigm,
           rs.timestamp
         );
   Serial.println(buffer);
