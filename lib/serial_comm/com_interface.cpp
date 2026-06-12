@@ -72,19 +72,19 @@ bool ComHandler::parseMessage(){
     return false;
   }
 
-  cmd_robot.type = cmdInfo->type;
-  cmd_robot.param_count = 0;
+  com_cmd_robot.type = cmdInfo->type;
+  com_cmd_robot.param_count = 0;
 
   // Parsing parameters
   while ((token = strtok(NULL, SEPARATOR)) != NULL){
-    if (cmd_robot.param_count >= MAX_PARAMS){
+    if (com_cmd_robot.param_count >= MAX_PARAMS){
       return false;
     }
     // Convert to double precision float and save
-    cmd_robot.params[cmd_robot.param_count++] = atof(token);
+    com_cmd_robot.params[com_cmd_robot.param_count++] = atof(token);
   }
   // Check number of params
-  if (cmd_robot.param_count != cmdInfo->param_count){
+  if (com_cmd_robot.param_count != cmdInfo->param_count){
     return false;
   }
   return true;

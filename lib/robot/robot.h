@@ -37,13 +37,13 @@ public:
     void enable();
     void disable();
 
-    void moveJoint(float target_joint_pose[JOINT_NUM]);
-    void moveCart(float target_cart_pose[6]);
+    void moveJoint(const float target_joint_pose[JOINT_NUM]);
+    void moveCart(const float target_cart_pose[6]);
 
     void setJointAngles(const float q[JOINT_NUM]);
     void setMaxJointSpeed(const float max_speed[JOINT_NUM]);
     void setMaxJointAcceleration(const float max_accel[JOINT_NUM]);
-
+    void setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm);
     void attachEncoderManager(EncoderManager* encoderManager);
     bool acceptCommand(const RobotCommand& cmd);
 

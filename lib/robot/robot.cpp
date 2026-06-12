@@ -66,7 +66,6 @@ void Robot::update() {
     default:
       break;
   }
-
   applyPlannedJointSpeeds();
 }
 
@@ -236,14 +235,14 @@ bool Robot::isBusy() const {
   }
 }
 
-void Robot::moveJoint(float target_joint_pose[JOINT_NUM]) {
+void Robot::moveJoint(const float target_joint_pose[JOINT_NUM]) {
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
   for (int i = 0; i<JOINT_NUM; i++){
     _robotState.q_target[i] = target_joint_pose[i];
   }
 }
 
-void Robot::moveCart(float target_cart_pose[6]) {
+void Robot::moveCart(const float target_cart_pose[6]) {
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_CART_CONTROL;
   for (int i = 0; i<6; i++){
     _robotState.x_target[i] = target_cart_pose[i];
@@ -427,3 +426,6 @@ void Robot::setMaxJointAcceleration(const float max_accel[JOINT_NUM]) {
   }
 }
 
+void Robot::setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm) {
+  _robotState.robot_motion_control_paradigm = motion_control_paradigm;
+}

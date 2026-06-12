@@ -17,11 +17,11 @@ typedef enum{
     CMD_SET_CART_CONTROL_MODE,
     CMD_SET_JOINT_CONTROL_MODE,
     CMD_EMERGENCY_STOP
-}cmd_type_t;
+}com_cmd_type_t;
 
 struct CommandInfo {
     const char* name;
-    cmd_type_t type;
+    com_cmd_type_t type;
     uint8_t param_count;
 };
 
@@ -44,9 +44,9 @@ const CommandInfo command_table[] = {
 const uint8_t NUM_COMMANDS = sizeof(command_table)/sizeof(CommandInfo);
 
 typedef struct{
-    cmd_type_t type;
+    com_cmd_type_t type;
     float params[MAX_PARAMS];
     uint8_t param_count;
-} cmd_robot_t;
+} com_cmd_robot_t;
 
 #endif

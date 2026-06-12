@@ -15,7 +15,7 @@ class ComHandler {
         void sendJointStates(const float* q);
 
         bool cmdReady = false;
-        cmd_robot_t cmd_robot;
+        com_cmd_robot_t com_cmd_robot;
 
     private:
         HardwareSerial &stream;
