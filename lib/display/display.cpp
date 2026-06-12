@@ -22,7 +22,7 @@ void Display::init(){
   delay(1000);
 }
 
-void Display::displayInfo(float q[JOINT_NUM], float x[6]){
+void Display::displayInfo(float q[JOINT_NUM], float x[6], uint32_t timestamp){
   constexpr int q_start_x = 0;
   constexpr int q_start_y = 8;
   constexpr int x_pos_start_x = 67;
@@ -49,5 +49,11 @@ void Display::displayInfo(float q[JOINT_NUM], float x[6]){
     _display.setCursor(x_ang_start_x, x_ang_start_y * (i+1));
     _display.printf("%.2f", x[i+3]);
   }
+
+  _display.setTextSize(1);
+  _display.setTextColor(SSD1306_WHITE);
+  _display.setCursor(50, 50);
+  _display.printf("%d", timestamp);
+
   _display.display();
 }

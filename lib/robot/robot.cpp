@@ -111,6 +111,8 @@ void Robot::applyPlannedJointSpeeds() {
 
 float Robot::getDeltaTimeSec() {
     const uint32_t now = micros();
+    _robotState.timestamp = now;
+
     const float dt = (now - last_time) * 1e-6f;
     last_time = now;
     return dt;

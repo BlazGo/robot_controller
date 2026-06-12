@@ -55,6 +55,7 @@ struct RobotState{
   robot_motion_control_paradigm_t robot_motion_control_paradigm;
 
   robot_error_state_t robot_error_state;
+  uint32_t timestamp;
 };
 
 struct RobotConfig{

@@ -14,7 +14,7 @@ class Display{
     Display();
 
     void init();
-    void displayInfo(float q[JOINT_NUM], float x[6]);
+    void displayInfo(float q[JOINT_NUM], float x[6], uint32_t timestamp);
 
   private:
     Adafruit_SSD1306 _display;

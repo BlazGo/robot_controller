@@ -165,7 +165,7 @@ void printRobotState(void){
           "              %.2f, %.2f, %.2f [rad]\n"
           "exec_state:   %d\n"
           "err_state:    %d\n"
-          "mode:         %d (0-Cart, 1-Joint)\n",
+          "timestamp:    %u \n",
           rs.q[0], rs.q[1], rs.q[2], rs.q[3], rs.q[4], rs.q[5],
           rs.q_target[0], rs.q_target[1], rs.q_target[2], rs.q_target[3], rs.q_target[4], rs.q_target[5],
           rs.q_dot[0], rs.q_dot[1], rs.q_dot[2], rs.q_dot[3], rs.q_dot[4], rs.q_dot[5],
@@ -174,11 +174,11 @@ void printRobotState(void){
           rs.x_target[0], rs.x_target[1], rs.x_target[2], rs.x_target[3], rs.x_target[4], rs.x_target[5],
           rs.exec_state,
           rs.robot_error_state,
-          rs.robot_motion_control_paradigm
+          rs.timestamp
         );
   Serial.println(buffer);
 
-  display.displayInfo(rs.q, rs.x);
+  display.displayInfo(rs.q, rs.x, rs.timestamp);
 }
 
 void printEncoderState(void){
