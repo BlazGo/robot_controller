@@ -5,8 +5,12 @@
 #include "version.h"
 
 // Choose which MCU you are using (Only pick one) TODO: better selection...
-#define WEACT_RP2350B 0
+#define WEACT_RP2350B 1
 #define WEACT_STM32H5 0
+#define RP2040 0      
+
+#define SERIAL_BAUDRATE 115200
+#define RS485_BAUDRATE 921600
 
 // ================================
 // OLED configuration
@@ -46,8 +50,8 @@
   #define ENABLE_PIN_0  26
   #define ENABLE_PIN_1  0
 
-  #define END_SWITCH_0_N 0
-  #define END_SWITCH_0_P 0
+  #define END_SWITCH_0_MIN 0
+  #define END_SWITCH_0_MAX 0
 
 #elif (WEACT_RP2350B == 1)
 
@@ -74,8 +78,8 @@
   #define ENABLE_PIN_0 24
   #define ENABLE_PIN_1  26
 
-  #define END_SWITCH_0_N 35
-  #define END_SWITCH_0_P 36
+  #define END_SWITCH_0_MIN 35
+  #define END_SWITCH_0_MAX 36
 
 #elif (WEACT_STM32H5 == 1)
   #error "Unsupported board: STM32 platform not yet implemented"
@@ -107,10 +111,9 @@
 // ─────────────────────────────────────────────────────────────
 //  JOINT LIMITS 
 // ─────────────────────────────────────────────────────────────
-
 // Joint limits in radians (degrees but converted)
-#define MIN_ANGLE_0  (-120.0f * PI / 180.0f)
-#define MAX_ANGLE_0  ( 120.0f * PI / 180.0f)
+#define MIN_ANGLE_0  (-175.0f * PI / 180.0f)
+#define MAX_ANGLE_0  ( 175.0f * PI / 180.0f)
 
 #define MIN_ANGLE_1  (-20.0f * PI / 180.0f)
 #define MAX_ANGLE_1  ( 60.0f * PI / 180.0f)
@@ -145,6 +148,18 @@ const float MAX_ANGLES[JOINT_NUM] = {
   MAX_ANGLE_5
 };
 
+constexpr float ZERO_POSE_RAD[JOINT_NUM]  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+constexpr float READY_POSE_RAD[JOINT_NUM] = {0.0f, 0.0f, 0.0f, 0.0f, PI/2, 0.0f}; 
+
+// Homing parameters for end switches joints (only joint_0)
+constexpr float HOMING_BACKOFF_TARGET_RAD = 0.15f; // small offset off the switch
+constexpr float HOMING_BACKOFF_TIMEOUT_US = 2000000;
+constexpr float HOMING_SEARCH_MARGIN_RAD = 0.1f;
+constexpr float JOINT_0_HOME_ANGLE_RAD = 0.65f;
+constexpr float JOINT_0_FULL_RANGE_RAD = MAX_ANGLE_0 - MIN_ANGLE_0;
+constexpr float JOINT_0_HOMING_SEEK_TARGET_MIN_RAD = MIN_ANGLE_0 - JOINT_0_FULL_RANGE_RAD;
+constexpr float JOINT_0_HOMING_SEEK_TARGET_MAX_RAD = MAX_ANGLE_0 + JOINT_0_FULL_RANGE_RAD;
+
 // ─────────────────────────────────────────────────────────────
 //  DEFAULT MOVEMENT  
 // ───────────────────────────────────────────────────────────── 
@@ -156,6 +171,7 @@ extern const float DEFAULT_JOINT_SPEEDS[JOINT_NUM];
 extern const float DEFAULT_JOINT_ACCELS[JOINT_NUM];
 extern const float ENCODER_OFFSETS[JOINT_NUM];
 extern const bool MOTOR_DIR_INVERTED[JOINT_NUM];
+extern const uint8_t HOMING_JOINT_ORDER[JOINT_NUM];
 
 // ─────────────────────────────────────────────────────────────
 // DERIVED VALUES (optional for calculations)

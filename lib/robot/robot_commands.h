@@ -10,6 +10,9 @@ enum class RobotCommandType{
   SET_MAX_JOINT_SPEEDS,
   SET_MAX_JOINT_ACCELERATIONS,
   CONTROL_PARADIGM_CHANGE,
+  UPDATE_FROM_ENCODERS,
+  START_HOMING,
+  STOP
 };
 
 struct RobotCommand{
@@ -20,6 +23,8 @@ struct RobotCommand{
   float q[JOINT_NUM];
   // field for cart variables
   float x[6];
+  
+  bool valid;
 };
 
 #endif // ROBOT_COMMANDS_H

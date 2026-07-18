@@ -36,3 +36,5 @@ const bool MOTOR_DIR_INVERTED[JOINT_NUM] = {
   false,
   false  
 };
+
+ const uint8_t HOMING_JOINT_ORDER[JOINT_NUM] = {1, 2, 3, 4, 5, 0};

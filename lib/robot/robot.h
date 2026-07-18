@@ -36,7 +36,7 @@ public:
     void enable();
     void disable();
 
-    void moveJoint(const float target_joint_pose[JOINT_NUM]);
+    bool moveJoint(const float target_joint_pose[JOINT_NUM]);
     void moveCart(const float target_cart_pose[6]);
 
     void setJointAngles(const float q[JOINT_NUM]);
@@ -45,10 +45,12 @@ public:
     void setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm);
     void attachEncoderManager(EncoderManager* encoderManager);
     bool acceptCommand(const RobotCommand& cmd);
+    bool goToZero();
+    bool goToReady();
 
-    RobotState getState();
-    float* getMaxJointSpeed();
-    float* getMaxJointAcceleration();
+    const RobotState getState();
+    const float* getMaxJointSpeed();
+    const float* getMaxJointAcceleration();
 
     bool isBusy() const;
     bool isMoving() const;
@@ -76,17 +78,25 @@ private:
     void updateJointPlan(float dt);
     void applyPlannedJointSpeeds();
     void writePoseToState(Matrix4x4 T_EE);
+    void updateFromEncoders();
+    bool startHoming();
+    void updateHoming();
+    void advanceHomingSequence();
+    bool isHoming() const;
+    void updateEndSwitches();
 
     uint32_t last_time = 0;
 
-    uint8_t _enable_pin0;  // Enables joints 0, 1, 2
-    uint8_t _enable_pin1;  // Enables joints 3, 4, 5
-
-    EncoderManager* _encoderManager = nullptr;
+    uint8_t _enable_pin_0;  // Enables joints 0, 1, 2
+    uint8_t _enable_pin_1;  // Enables joints 3, 4, 5
+    uint8_t _joint_end_switch_min;  // end switch in CCW dir
+    uint8_t _joint_end_switch_max;  // end switch in CW dir
+    
     Joint _joints[JOINT_NUM];
     RobotState _robotState{};
     RobotConfig _robotConfig{};
     RobotPlanner _robotPlanner{};
+    HomingStatus _homingStatus;
 };
 
 void sharedWriteRobotState(const RobotState& rs);
