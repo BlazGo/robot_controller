@@ -10,11 +10,9 @@
 #include "node_protocol.h"
 
 void printLoopInfo(void);
-void printJointState(void);
 void printRobotState(void);
 
 void robotUpdateTask( void *pvParameters);
-void encoderUpdateTask( void *pv_parameters);
 void IOUpdateTask( void *pv_parameters);
 void printTask( void *pvParameters );
 void displayUpdateTask( void *pvParameters );
@@ -26,13 +24,19 @@ Robot robot;
 Display display;
 NodeProtocol nodes;
 
+// ---------------------
+// Setup core_0
+// ---------------------
 void setup() {
   robot.init();
   robot.enable();
 
-  xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 3, nullptr);
+  xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 1, nullptr);
 }
 
+// ---------------------
+// Setup core_1
+// ---------------------
 void setup1() {
   pinMode(BLUE_LED, OUTPUT);
   
@@ -44,20 +48,31 @@ void setup1() {
   nodes.begin(RS485_BAUDRATE);             // starts Serial1 for RS485
   display.init();
 
-  //xTaskCreate(encoderUpdateTask, "encoderUpdateTask", 4096, nullptr, 1, nullptr);
-  //xTaskCreate(displayUpdateTask, "displayUpdateTask", 4096, nullptr, 2, nullptr);
-  xTaskCreate(IOUpdateTask, "IOUpdateTask", 4096, nullptr, 2, nullptr);
-  xTaskCreate(printTask, "printTask", 8192, nullptr, 3, nullptr);
+  xTaskCreate(nodeUpdateTask, "nodeUpdateTask", 4096, nullptr, 2, nullptr);
+  xTaskCreate(IOUpdateTask, "IOUpdateTask", 4096, nullptr, 3, nullptr);
+  xTaskCreate(printTask, "printTask", 8192, nullptr, 4, nullptr);
+  xTaskCreate(displayUpdateTask, "displayUpdateTask", 8192, nullptr, 5, nullptr);
 }
 
+// ---------------------
+// Loop core_0
+// ---------------------
 void loop() {
   vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
+// ---------------------
+// Loop core_1
+// ---------------------
 void loop1() {
   vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
+// ---------------------
+// Tasks functions
+// ---------------------
+
+// core_0
 void robotUpdateTask(void *pv_parameters){
   /*
     I dunno something with RTOS (pointer to void parameters)
@@ -94,6 +109,7 @@ void robotUpdateTask(void *pv_parameters){
   }
 }
 
+// core_1
 void IOUpdateTask(void *pv_parameters) {
   (void)pv_parameters;
 
@@ -181,6 +197,18 @@ void printTask(void *pv_parameters){
   }
 }
 
+void nodeUpdateTask(void *pv_parameters) {
+  (void)pv_parameters;
+
+  for (;;) {
+    nodes.update();             // non-blocking, call every loop, no delay() anywhere
+  }
+  vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+// ---------------------
+// Convenience functions
+// ---------------------
 void printLoopInfo(void) {
   char buffer[64];
   const int f_min = 1000;
@@ -224,13 +252,4 @@ void printRobotState(void){
   Serial.println(buffer);
 
   display.displayInfo(rs.q, rs.x, rs.timestamp);
-}
-
-void nodeUpdateTask(void *pv_parameters) {
-  (void)pv_parameters;
-
-  for (;;) {
-    nodes.update();             // non-blocking, call every loop, no delay() anywhere
-  }
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
