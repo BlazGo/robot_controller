@@ -3,7 +3,7 @@
 RobotCommandQueue g_robot_cmd_queue;
 
 uint8_t _queueNextIndex(uint8_t idx) {
-    // add one to idx and if its over the length it loops around
+    // add one to idx and if its over the length it loops around (cyclic buffer)
     return (uint8_t) (( idx + 1u ) % ROBOT_CMD_QUEUE_LEN);
 }
 

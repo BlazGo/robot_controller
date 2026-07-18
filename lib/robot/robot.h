@@ -17,6 +17,7 @@ struct DHParam {
 inline constexpr float kAngleRadSpeedTolerance = 0.0025f;
 inline constexpr float kAngleRadPositionTolerance = 0.005f;
 
+//   theta      alpha       d         a
 inline constexpr DHParam dh_table[JOINT_NUM] = {
     { 0.0f,     -PI / 2.0f, 102.0f,   0.0f   },  // joint 0
     { -PI / 2.0f, 0.0f,       0.0f,   210.0f },  // joint 1
@@ -43,7 +44,6 @@ public:
     void setMaxJointSpeed(const float max_speed[JOINT_NUM]);
     void setMaxJointAcceleration(const float max_accel[JOINT_NUM]);
     void setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm);
-    void attachEncoderManager(EncoderManager* encoderManager);
     bool acceptCommand(const RobotCommand& cmd);
     bool goToZero();
     bool goToReady();

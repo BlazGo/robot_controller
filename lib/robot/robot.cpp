@@ -8,9 +8,11 @@ constexpr float kDamping = 0.1f;
 }
 
 Robot::Robot()
-  : _enable_pin0(ENABLE_PIN_0),
-    _enable_pin1(ENABLE_PIN_1),
-    _encoderManager(nullptr),
+  : _enable_pin_0(ENABLE_PIN_0),
+    _enable_pin_1(ENABLE_PIN_1),
+    _joint_end_switch_min(END_SWITCH_0_MIN),
+    _joint_end_switch_max(END_SWITCH_0_MAX),
+    
     _joints{Joint(STEP_PIN_0, DIR_PIN_0, MICROSTEPS_0, GEAR_RATIO_0, MIN_ANGLE_0, MAX_ANGLE_0, MOTOR_DIR_INVERTED[0]),
             Joint(STEP_PIN_1, DIR_PIN_1, MICROSTEPS_1, GEAR_RATIO_1, MIN_ANGLE_1, MAX_ANGLE_1, MOTOR_DIR_INVERTED[1]),
             Joint(STEP_PIN_2, DIR_PIN_2, MICROSTEPS_2, GEAR_RATIO_2, MIN_ANGLE_2, MAX_ANGLE_2, MOTOR_DIR_INVERTED[2]),
@@ -19,6 +21,7 @@ Robot::Robot()
             Joint(STEP_PIN_5, DIR_PIN_5, MICROSTEPS_5, GEAR_RATIO_5, MIN_ANGLE_5, MAX_ANGLE_5, MOTOR_DIR_INVERTED[5])}
 {
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
+  _robotState.all_homed = false;
 
   for (int i = 0; i < JOINT_NUM; ++i) {
     _joints[i].init();
@@ -31,6 +34,9 @@ Robot::Robot()
     _robotState.q_target[i] = 0.0f;
     _robotState.q_dot_target[i] = 0.0f;
     _robotPlanner.q_planned[i] = 0.0f;
+
+    _robotState.limits_min[i] = false;
+    _robotState.limits_max[i] = false;
   }
 
   setMaxJointSpeed(DEFAULT_JOINT_SPEEDS);
@@ -39,8 +45,12 @@ Robot::Robot()
 
 
 void Robot::init() {
-  pinMode(_enable_pin0, OUTPUT);
-  pinMode(_enable_pin1, OUTPUT);
+  pinMode(_enable_pin_0, OUTPUT);
+  pinMode(_enable_pin_1, OUTPUT);
+  
+  pinMode(_joint_end_switch_min, INPUT_PULLDOWN);
+  pinMode(_joint_end_switch_max, INPUT_PULLDOWN);
+
   disable();
   last_time = micros();
 }
@@ -90,6 +100,7 @@ void Robot::updateCartesianPlan(const Matrix4x4 (&transforms)[JOINT_NUM + 1]) {
 }
 
 void Robot::updateJointPlan(float dt) {
+  // Here we can implement synchronised joint move, different acceleration curves, etc.
     for (int i = 0; i < JOINT_NUM; ++i) {
         _robotPlanner.q_planned[i] = calcTrapTrajBasic(
             _robotState.q[i],
@@ -117,10 +128,6 @@ float Robot::getDeltaTimeSec() {
     return dt;
 }
 
-void Robot::attachEncoderManager(EncoderManager *encoderManager){
-  _encoderManager = encoderManager;
-}
-
 float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel) {
     const float error = goal - curr_pos;
 
@@ -134,14 +141,16 @@ float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float g
 
     float accel = 0.0f;
 
+    // Selecting in which part we are
     if (vel_toward_goal < 0.0f) {
         accel = dir_to_goal * max_accel;
     } else if (fabsf(error) <= d_stop) {
-        accel = -sign(curr_vel) * max_accel;
+        accel = -dir_to_goal * max_accel;
     } else if (fabsf(curr_vel) < max_vel) {
         accel = dir_to_goal * max_accel;
     }
 
+    // update current speed with acceleration and timestep
     const float new_vel = curr_vel + accel * dt;
     return clampAbsFloat(new_vel, max_vel);
 }
@@ -162,14 +171,14 @@ void Robot::writePoseToState(Matrix4x4 T_EE) {
 }
 
 void Robot::enable() {
-  digitalWrite(_enable_pin0, LOW);
-  digitalWrite(_enable_pin1, LOW);
+  digitalWrite(_enable_pin_0, LOW);
+  digitalWrite(_enable_pin_1, LOW);
   _robotState.motors_enabled = true;
 }
 
 void Robot::disable(){
-  digitalWrite(_enable_pin0, HIGH);
-  digitalWrite(_enable_pin1, HIGH);
+  digitalWrite(_enable_pin_0, HIGH);
+  digitalWrite(_enable_pin_1, HIGH);
   _robotState.motors_enabled = false;
 }
 
@@ -235,11 +244,12 @@ bool Robot::isBusy() const {
   }
 }
 
-void Robot::moveJoint(const float target_joint_pose[JOINT_NUM]) {
+bool Robot::moveJoint(const float target_joint_pose[JOINT_NUM]) {
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
   for (int i = 0; i<JOINT_NUM; i++){
     _robotState.q_target[i] = target_joint_pose[i];
   }
+  return true;
 }
 
 void Robot::moveCart(const float target_cart_pose[6]) {
@@ -422,15 +432,15 @@ void sharedWriteRobotState(const RobotState &rs) {
 }
 
 // ----------- Getters -----------
-RobotState Robot::getState(){
+const RobotState Robot::getState(){
   return _robotState;
 }
 
-float* Robot::getMaxJointSpeed() {
+const float* Robot::getMaxJointSpeed() {
   return _robotConfig.max_joint_speeds;
 }
 
-float* Robot::getMaxJointAcceleration() {
+const float* Robot::getMaxJointAcceleration() {
   return _robotConfig.max_joint_accelerations;
 }
 

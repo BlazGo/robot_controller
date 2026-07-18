@@ -3,7 +3,7 @@
 const float DEFAULT_JOINT_SPEEDS[JOINT_NUM] = {
   0.4f,
   0.6f,
-  0.6f,
+  0.3f,
   0.25f,
   1.5f,
   2.5f
@@ -12,8 +12,8 @@ const float DEFAULT_JOINT_SPEEDS[JOINT_NUM] = {
 const float DEFAULT_JOINT_ACCELS[JOINT_NUM] = {
   0.8f,
   1.0f,
-  1.0f,
-  0.25f,
+  0.4f,
+  0.3f,
   1.5f,
   2.0f
 };
@@ -29,10 +29,10 @@ const float ENCODER_OFFSETS[JOINT_NUM] = {
 };
 
 const bool MOTOR_DIR_INVERTED[JOINT_NUM] = {
+  true,
+  false,  
   false,
-  true,  
-  true,
-  true,
+  false,
   false,
   false  
 };
