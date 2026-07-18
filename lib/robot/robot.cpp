@@ -22,7 +22,7 @@ Robot::Robot()
 {
   _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
   _robotState.all_homed = false;
-
+  
   for (int i = 0; i < JOINT_NUM; ++i) {
     _joints[i].init();
     _joints[i].setMotionControlParadigm(JOINT_SPEED_CONTROL);
@@ -59,6 +59,12 @@ void Robot::update() {
   const float dt = getDeltaTimeSec();
   
   updateJointStates();
+  updateEndSwitches();
+
+  if (_homingStatus.active) {
+    updateHoming();
+    return;
+  }
 
   Matrix4x4 transforms[JOINT_NUM + 1];
   computeForwardKinematics(_robotState.q, transforms);
@@ -101,15 +107,15 @@ void Robot::updateCartesianPlan(const Matrix4x4 (&transforms)[JOINT_NUM + 1]) {
 
 void Robot::updateJointPlan(float dt) {
   // Here we can implement synchronised joint move, different acceleration curves, etc.
-    for (int i = 0; i < JOINT_NUM; ++i) {
-        _robotPlanner.q_planned[i] = calcTrapTrajBasic(
-            _robotState.q[i],
-            _robotPlanner.q_planned[i],
-            dt,
-            _robotState.q_target[i],
-            _robotConfig.max_joint_speeds[i],
-            _robotConfig.max_joint_accelerations[i]);
-    }
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    _robotPlanner.q_planned[i] = calcTrapTrajBasic(
+      _robotState.q[i],
+      _robotPlanner.q_planned[i],
+      dt,
+      _robotState.q_target[i],
+      _robotConfig.max_joint_speeds[i],
+      _robotConfig.max_joint_accelerations[i]);
+  }
 }
 
 void Robot::applyPlannedJointSpeeds() {
@@ -397,38 +403,169 @@ bool Robot::acceptCommand(const RobotCommand& cmd) {
       moveCart(cmd.x);
       return true;
 
+    case RobotCommandType::UPDATE_FROM_ENCODERS:
+    {
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      float temp_q_rad[JOINT_NUM];
+
+      for (uint8_t i=0; i<JOINT_NUM; i++){
+        if (i == 0){
+          temp_q_rad[i] = _robotState.q[i];
+          continue;
+        }
+        temp_q_rad[i] = cmd.q[i];
+      }
+
+      setJointAngles(temp_q_rad);
+      _robotState.command_completed = true;
+      return true;
+    }
+
+    case RobotCommandType::START_HOMING:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+
+      startHoming();
+
+      return true;
+
     default:
       return false;
   }
     
 }
 
-void sharedWriteRobotState(const RobotState &rs) {
-    static uint32_t update_counter = 0;
+bool Robot::goToZero() {
+  if (!_robotState.all_homed) return false;
+  return moveJoint(ZERO_POSE_RAD);
+}
 
-    RobotSharedState snap{};
+bool Robot::goToReady() {
+  if (!_robotState.all_homed) return false;
+  return moveJoint(READY_POSE_RAD);
+}
 
-    for (int i = 0; i < JOINT_NUM; ++i) {
-        snap.q_rad[i] = rs.q[i];
-        snap.q_target_rad[i] = rs.q_target[i];
-        snap.q_dot_rad[i] = rs.q_dot[i];
-        snap.q_dot_target_rad[i] = rs.q_dot_target[i];
+bool Robot::startHoming() {
+  // If we cant home return
+  if (isBusy() || _homingStatus.active) return false;
+  // Otherwise proceed
+  _homingStatus = HomingStatus{};
+  _homingStatus.active = true;
+  // Select the first joint to home
+  const uint8_t first_joint = HOMING_JOINT_ORDER[0];
+  // Decide if it uses encoder or endswitch (only joint 0 uses endswitches)
+  _homingStatus.phase = (first_joint == 0) ? HomingPhase::SEEK_SWITCH_DIR_MIN : HomingPhase::READ_ENCODER;
+  _homingStatus.phase_start_q_rad = _robotState.q[first_joint];
+  // Have to set joint paradigm not cartesian
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
+  return true;
+}
+
+bool Robot::isHoming() const {
+  return _homingStatus.active;
+}
+
+void Robot::advanceHomingSequence() {
+  // Increase the value immediately by 1
+  _homingStatus.order_idx = _homingStatus.order_idx + 1;
+
+  if (_homingStatus.order_idx >= JOINT_NUM) {
+    _homingStatus.phase = HomingPhase::DONE;
+    _homingStatus.active = false;
+    return;
+  }
+  const uint8_t next_joint = HOMING_JOINT_ORDER[_homingStatus.order_idx];
+  // if joint 0 is next we follow the end switch routes else encoder route
+  _homingStatus.phase = (next_joint == 0) ? HomingPhase::SEEK_SWITCH_DIR_MIN : HomingPhase::READ_ENCODER;
+  _homingStatus.phase_start_q_rad = _robotState.q[next_joint];
+}
+
+void Robot::updateHoming(){
+  float angle = 0.0f;
+  // Check if we're out of bounds (we're done)
+  if (_homingStatus.order_idx >= JOINT_NUM) {
+    _homingStatus.phase = HomingPhase::DONE;
+  }
+
+  // Select the current joint
+  const uint8_t joint_idx = HOMING_JOINT_ORDER[_homingStatus.order_idx];
+  Joint& joint = _joints[joint_idx];
+
+  switch (_homingStatus.phase) {
+    // Negative direction of rotation
+    case HomingPhase::SEEK_SWITCH_DIR_MIN: {
+      _robotState.q_target[joint_idx] = JOINT_0_HOMING_SEEK_TARGET_MIN_RAD; // e.g. beyond MIN_ANGLE_0
+
+      const float traveled_rad = fabsf(_robotState.q[joint_idx] - _homingStatus.phase_start_q_rad);
+      
+      if (joint.getState().at_min_lim) {
+        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
+        _homingStatus.phase = HomingPhase::BACKOFF;
+        _homingStatus.phase_start_time_us = micros();
+        break;
+      }
+
+      if (traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) {
+        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
+        _homingStatus.phase = HomingPhase::SEEK_SWITCH_DIR_MAX;
+        _homingStatus.phase_start_q_rad = _robotState.q[joint_idx];
+      }
+    break;
     }
 
-    for (int i = 0; i < 3; ++i) {
-        snap.x_mm[i] = rs.x[i];
-        snap.x_rad[i] = rs.x[i + 3];
-        snap.x_target_mm[i] = rs.x_target[i];
-        snap.x_target_rad[i] = rs.x_target[i + 3];
+    case HomingPhase::SEEK_SWITCH_DIR_MAX: {
+      _robotState.q_target[joint_idx] = JOINT_0_HOMING_SEEK_TARGET_MAX_RAD;
+
+      const float traveled_rad = fabsf(_robotState.q[joint_idx] - _homingStatus.phase_start_q_rad);
+      
+      if (joint.getState().at_max_lim) {
+        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
+        _homingStatus.phase = HomingPhase::BACKOFF;
+        _homingStatus.phase_start_time_us = micros();
+        break;
+      }
+
+      if (traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) {
+        _homingStatus.phase = HomingPhase::ERROR; // switch never triggered — wiring/config fault
+      }
+    break;
     }
 
-    snap.moving = rs.exec_state;
-    snap.robot_error_state = rs.robot_error_state;
-    snap.robot_motion_mode = rs.robot_motion_control_paradigm;
-    snap.timestamp_us = micros();
-    snap.update_counter = ++update_counter;
+    case HomingPhase::BACKOFF:
+      _robotState.q_target[joint_idx] = _robotState.q[joint_idx] + HOMING_BACKOFF_TARGET_RAD; // small offset away from switch
+      
+      if (fabsf(_robotState.q[joint_idx] - (_robotState.q_target[joint_idx])) < kAngleRadPositionTolerance || (micros() - _homingStatus.phase_start_time_us) > HOMING_BACKOFF_TIMEOUT_US) {
+        joint.setCurrentAngle(JOINT_0_HOME_ANGLE_RAD);
+        _robotState.q[joint_idx] = JOINT_0_HOME_ANGLE_RAD;
+        _robotState.q_target[joint_idx] = JOINT_0_HOME_ANGLE_RAD;
+        advanceHomingSequence();
+      }   
+    break;
 
-    g_robot_shared_state = snap;
+    case HomingPhase::READ_ENCODER:
+      angle = 0.0f;
+      _robotState.q_target[joint_idx] = 0.0f;
+      
+      if (fabsf(_robotState.q_target[joint_idx] - _robotState.q[joint_idx]) < kAngleRadPositionTolerance) {
+        advanceHomingSequence();
+      }
+    break;
+  
+    case HomingPhase::DONE:
+      _homingStatus.active = false;
+    break;
+
+    case HomingPhase::ERROR:
+      _robotState.robot_error_state = robot_error_state_t::NOT_HOMED;
+      _homingStatus.active = false;
+    break;
+
+    default:
+    break;
+  }
 }
 
 // ----------- Getters -----------
@@ -469,4 +606,37 @@ void Robot::setMaxJointAcceleration(const float max_accel[JOINT_NUM]) {
 
 void Robot::setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm) {
   _robotState.robot_motion_control_paradigm = motion_control_paradigm;
+}
+
+void Robot::updateEndSwitches() {
+  _robotState.limits_min[0] = digitalRead(_joint_end_switch_min);
+  _robotState.limits_max[0] = digitalRead(_joint_end_switch_max);
+}
+
+void sharedWriteRobotState(const RobotState &rs) {
+    static uint32_t update_counter = 0;
+
+    RobotSharedState snap{};
+
+    for (int i = 0; i < JOINT_NUM; ++i) {
+        snap.q_rad[i] = rs.q[i];
+        snap.q_target_rad[i] = rs.q_target[i];
+        snap.q_dot_rad[i] = rs.q_dot[i];
+        snap.q_dot_target_rad[i] = rs.q_dot_target[i];
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        snap.x_mm[i] = rs.x[i];
+        snap.x_rad[i] = rs.x[i + 3];
+        snap.x_target_mm[i] = rs.x_target[i];
+        snap.x_target_rad[i] = rs.x_target[i + 3];
+    }
+
+    snap.moving = rs.exec_state;
+    snap.robot_error_state = rs.robot_error_state;
+    snap.robot_motion_mode = rs.robot_motion_control_paradigm;
+    snap.timestamp_us = micros();
+    snap.update_counter = ++update_counter;
+
+    g_robot_shared_state = snap;
 }

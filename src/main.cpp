@@ -136,6 +136,21 @@ void IOUpdateTask(void *pv_parameters) {
           }
         break;
 
+        case CMD_SET_CURRENT_JOINT_ANGLES_FROM_ENCODERS:
+          robot_cmd.type = RobotCommandType::UPDATE_FROM_ENCODERS;
+
+          float temp_angles[JOINT_NUM];
+          nodes.getAngles(temp_angles);
+
+          for (uint8_t param_idx = 0; param_idx < JOINT_NUM; ++param_idx) {
+            robot_cmd.q[param_idx] = temp_angles[param_idx];
+          }
+        break;
+
+        case CMD_START_HOMING:
+          robot_cmd.type = RobotCommandType::START_HOMING;
+        break;
+
         default:
         break;
       }
