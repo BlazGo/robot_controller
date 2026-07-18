@@ -5,14 +5,13 @@
 
 #include "com_interface.h"
 #include "robot.h"
-#include "encoder_manager.h"
 #include "robot_command_queue.h"
 #include "display.h"
+#include "node_protocol.h"
 
 void printLoopInfo(void);
 void printJointState(void);
 void printRobotState(void);
-void printEncoderState(void);
 
 void robotUpdateTask( void *pvParameters);
 void encoderUpdateTask( void *pv_parameters);
@@ -22,15 +21,14 @@ void displayUpdateTask( void *pvParameters );
 
 volatile uint32_t g_dt_us = 0;
 
-EncoderManager encoders;
 ComHandler com(Serial);
 Robot robot;
 Display display;
+NodeProtocol nodes;
 
 void setup() {
   robot.init();
   robot.enable();
-  robot.attachEncoderManager(&encoders);
 
   xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 3, nullptr);
 }
@@ -42,8 +40,8 @@ void setup1() {
   Wire.setClock(100000);
   
   // Set the serial baudrate
-  com.begin(115200);
-  encoders.init();
+  com.begin(SERIAL_BAUDRATE);
+  nodes.begin(RS485_BAUDRATE);             // starts Serial1 for RS485
   display.init();
 
   //xTaskCreate(encoderUpdateTask, "encoderUpdateTask", 4096, nullptr, 1, nullptr);
@@ -150,20 +148,6 @@ void IOUpdateTask(void *pv_parameters) {
 }
 
 void displayUpdateTask(void *pv_parameters) {
-
-}
-
-void encoderUpdateTask(void *pv_parameters) {
-  (void)pv_parameters;
-
-  TickType_t last_wake_tick = xTaskGetTickCount();
-  const TickType_t update_period_ticks = pdMS_TO_TICKS(20);
-
-  for (;;) {
-    encoders.updateAngles();
-
-    vTaskDelayUntil(&last_wake_tick, update_period_ticks);
-  }
 }
 
 void printTask(void *pv_parameters){
@@ -174,7 +158,6 @@ void printTask(void *pv_parameters){
         
     printLoopInfo();
     printRobotState();
-    printEncoderState();
 
     digitalWrite(BLUE_LED, LOW);
 
@@ -228,18 +211,11 @@ void printRobotState(void){
   display.displayInfo(rs.q, rs.x, rs.timestamp);
 }
 
-void printEncoderState(void){
-  char buffer[128];
+void nodeUpdateTask(void *pv_parameters) {
+  (void)pv_parameters;
 
-  EncoderFrame _temp = encoders.getLatestFrame();
-
-  sprintf(buffer,
-          "q_enc:     %.2f, %.2f, %.2f, %.2f, %.2f, %.2f [rad]\n"
-          "valid:     %d, %d, %d, %d, %d, %d, \n"
-          "timestamp: %i",
-          _temp.joints[0].angle_rad, _temp.joints[1].angle_rad, _temp.joints[2].angle_rad, _temp.joints[3].angle_rad, _temp.joints[4].angle_rad, _temp.joints[5].angle_rad,
-          _temp.joints[0].valid, _temp.joints[1].valid, _temp.joints[2].valid, _temp.joints[3].valid, _temp.joints[4].valid, _temp.joints[5].valid,
-          _temp.timestamp_us
-        );
-  Serial.println(buffer);
+  for (;;) {
+    nodes.update();             // non-blocking, call every loop, no delay() anywhere
+  }
+  vTaskDelay(pdMS_TO_TICKS(10));
 }

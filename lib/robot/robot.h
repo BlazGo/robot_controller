@@ -2,7 +2,6 @@
 #define ROBOT_H
 
 #include "config.h"
-#include "encoder_manager.h"
 #include "joint.h"
 #include "robot_command_queue.h"
 #include "robot_state_shared.h"
