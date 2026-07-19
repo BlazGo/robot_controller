@@ -43,7 +43,7 @@ Robot::Robot()
   setMaxJointAcceleration(DEFAULT_JOINT_ACCELS);
 }
 
-
+// ----------- Core functionality -----------
 void Robot::init() {
   pinMode(_enable_pin_0, OUTPUT);
   pinMode(_enable_pin_1, OUTPUT);
@@ -85,6 +85,215 @@ void Robot::update() {
   applyPlannedJointSpeeds();
 }
 
+void Robot::enable() {
+  digitalWrite(_enable_pin_0, LOW);
+  digitalWrite(_enable_pin_1, LOW);
+  _robotState.motors_enabled = true;
+}
+
+void Robot::disable(){
+  digitalWrite(_enable_pin_0, HIGH);
+  digitalWrite(_enable_pin_1, HIGH);
+  _robotState.motors_enabled = false;
+}
+
+void Robot::updateJointStates() {
+  _robotState.robot_error_state = robot_error_state_t::NO_ERROR;
+
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    _joints[i].update();
+    _robotState.joints[i] = _joints[i].getState();
+
+    _robotState.q[i] = _robotState.joints[i].angle_rad;
+    _robotState.q_dot[i] = _robotState.joints[i].angle_vel_rad_s;
+
+    if (_robotState.joints[i].at_min_lim) {
+      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MIN;
+    } else if (_robotState.joints[i].at_max_lim) {
+      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MAX;
+    }
+  }
+
+  _robotState.exec_state = computeExecState();
+}
+
+void Robot::updateEndSwitches() {
+  _robotState.limits_min[0] = digitalRead(_joint_end_switch_min);
+  _robotState.limits_max[0] = digitalRead(_joint_end_switch_max);
+}
+
+bool Robot::isMoving() const {
+  for (int i = 0; i < JOINT_NUM; ++i) {
+    if (_robotState.joints[i].moving) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Robot::isBusy() const {
+  switch (_robotState.exec_state) {
+    case ROBOT_IDLE:
+    case ROBOT_DONE:
+      return false;
+
+    case ROBOT_EXECUTING:
+    case ROBOT_STOPPING:
+    case ROBOT_ERROR:
+    default:
+      return true;
+  }
+}
+
+bool Robot::acceptCommand(const RobotCommand& cmd) {
+  // accept command only if not in error state
+  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
+    return false;
+  }
+  
+  switch (cmd.type){
+
+    case RobotCommandType::SET_MAX_JOINT_SPEEDS:
+      setMaxJointSpeed(cmd.q);
+      _robotState.command_completed = true;
+      return true;
+
+    case RobotCommandType::SET_MAX_JOINT_ACCELERATIONS:
+      setMaxJointAcceleration(cmd.q);
+      _robotState.command_completed = true;
+      return true;
+
+    case RobotCommandType::CONTROL_PARADIGM_CHANGE:
+      setMotionControlParadigm(static_cast<robot_motion_control_paradigm_t>(cmd.id_int));
+      _robotState.command_completed = true;
+      return true;
+
+    case RobotCommandType::JOINT_MOVE:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      _robotState.command_completed = false;
+      _robotState.stop_requested = false;
+      moveJoint(cmd.q);
+      return true;
+
+    case RobotCommandType::CART_MOVE:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      _robotState.command_completed = false;
+      _robotState.stop_requested = false;
+      moveCart(cmd.x);
+      return true;
+
+    case RobotCommandType::UPDATE_FROM_ENCODERS:
+    {
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+      float temp_q_rad[JOINT_NUM];
+
+      for (uint8_t i=0; i<JOINT_NUM; i++){
+        if (i == 0){
+          temp_q_rad[i] = _robotState.q[i];
+          continue;
+        }
+        temp_q_rad[i] = cmd.q[i];
+      }
+
+      setJointAngles(temp_q_rad);
+      _robotState.command_completed = true;
+      return true;
+    }
+
+    case RobotCommandType::START_HOMING:
+      if (_robotState.command_active || isMoving()) {
+        return false;
+      }
+
+      startHoming();
+
+      return true;
+
+    default:
+      return false;
+  }
+    
+}
+
+RobotExecState Robot::computeExecState() const {
+  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
+    return ROBOT_ERROR;
+  }
+
+  if (_robotState.stop_requested) {
+    return ROBOT_STOPPING;
+  }
+
+  if (isMoving()) {
+    return ROBOT_EXECUTING;
+  }
+
+  if (_robotState.command_completed) {
+    return ROBOT_DONE;
+  }
+  return ROBOT_IDLE;
+}
+// ----------- Core functionality END -----------
+
+// ----------- Move commands -----------
+bool Robot::moveJoint(const float target_joint_pose[JOINT_NUM]) {
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
+  for (int i = 0; i<JOINT_NUM; i++){
+    _robotState.q_target[i] = target_joint_pose[i];
+  }
+  return true;
+}
+
+void Robot::moveCart(const float target_cart_pose[6]) {
+  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_CART_CONTROL;
+  for (int i = 0; i<6; i++){
+    _robotState.x_target[i] = target_cart_pose[i];
+  }
+}
+
+bool Robot::goToZero() {
+  if (!_robotState.all_homed) return false;
+  return moveJoint(ZERO_POSE_RAD);
+}
+
+bool Robot::goToReady() {
+  if (!_robotState.all_homed) return false;
+  return moveJoint(READY_POSE_RAD);
+}
+
+float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel) {
+    const float error = goal - curr_pos;
+
+    if (fabsf(error) < kAngleRadPositionTolerance) {
+        return 0.0f;
+    }
+
+    const float dir_to_goal = sign(error);
+    const float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
+    const float vel_toward_goal = curr_vel * dir_to_goal;
+
+    float accel = 0.0f;
+
+    // Selecting in which part we are
+    if (vel_toward_goal < 0.0f) {
+        accel = dir_to_goal * max_accel;
+    } else if (fabsf(error) <= d_stop) {
+        accel = -dir_to_goal * max_accel;
+    } else if (fabsf(curr_vel) < max_vel) {
+        accel = dir_to_goal * max_accel;
+    }
+
+    // update current speed with acceleration and timestep
+    const float new_vel = curr_vel + accel * dt;
+    return clampAbsFloat(new_vel, max_vel);
+}
+
 void Robot::updateCartesianPlan(const Matrix4x4 (&transforms)[JOINT_NUM + 1]) {
     Matrix6x6 jacobian;
     computeGeometricJacobian(transforms, jacobian);
@@ -124,147 +333,9 @@ void Robot::applyPlannedJointSpeeds() {
         _robotState.q_dot_target[i] = _robotPlanner.q_planned[i];
     }
 }
+// ----------- Move commands END -----------
 
-float Robot::getDeltaTimeSec() {
-    const uint32_t now = micros();
-    _robotState.timestamp = now;
-
-    const float dt = (now - last_time) * 1e-6f;
-    last_time = now;
-    return dt;
-}
-
-float Robot::calcTrapTrajBasic(float curr_pos, float curr_vel, float dt, float goal, float max_vel, float max_accel) {
-    const float error = goal - curr_pos;
-
-    if (fabsf(error) < kAngleRadPositionTolerance) {
-        return 0.0f;
-    }
-
-    const float dir_to_goal = sign(error);
-    const float d_stop = (curr_vel * curr_vel) / (2.0f * max_accel);
-    const float vel_toward_goal = curr_vel * dir_to_goal;
-
-    float accel = 0.0f;
-
-    // Selecting in which part we are
-    if (vel_toward_goal < 0.0f) {
-        accel = dir_to_goal * max_accel;
-    } else if (fabsf(error) <= d_stop) {
-        accel = -dir_to_goal * max_accel;
-    } else if (fabsf(curr_vel) < max_vel) {
-        accel = dir_to_goal * max_accel;
-    }
-
-    // update current speed with acceleration and timestep
-    const float new_vel = curr_vel + accel * dt;
-    return clampAbsFloat(new_vel, max_vel);
-}
-
-void Robot::writePoseToState(Matrix4x4 T_EE) {
-  _robotState.T_EE = T_EE;
-
-  _robotState.x[0] = T_EE.m[0][3];
-  _robotState.x[1] = T_EE.m[1][3];
-  _robotState.x[2] = T_EE.m[2][3];
-
-  const Matrix3x3 rot = getRotationMatrixFromPoseMatrix(T_EE);
-  const Vect3f eul = rotationMatrixToEulerAngles(rot);
-
-  _robotState.x[3] = eul.v[0];
-  _robotState.x[4] = eul.v[1];
-  _robotState.x[5] = eul.v[2];
-}
-
-void Robot::enable() {
-  digitalWrite(_enable_pin_0, LOW);
-  digitalWrite(_enable_pin_1, LOW);
-  _robotState.motors_enabled = true;
-}
-
-void Robot::disable(){
-  digitalWrite(_enable_pin_0, HIGH);
-  digitalWrite(_enable_pin_1, HIGH);
-  _robotState.motors_enabled = false;
-}
-
-void Robot::updateJointStates() {
-  _robotState.robot_error_state = robot_error_state_t::NO_ERROR;
-
-  for (int i = 0; i < JOINT_NUM; ++i) {
-    _joints[i].update();
-    _robotState.joints[i] = _joints[i].getState();
-
-    _robotState.q[i] = _robotState.joints[i].angle_rad;
-    _robotState.q_dot[i] = _robotState.joints[i].angle_vel_rad_s;
-
-    if (_robotState.joints[i].at_min_lim) {
-      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MIN;
-    } else if (_robotState.joints[i].at_max_lim) {
-      _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MAX;
-    }
-  }
-
-  _robotState.exec_state = computeExecState();
-}
-
-bool Robot::isMoving() const {
-  for (int i = 0; i < JOINT_NUM; ++i) {
-    if (_robotState.joints[i].moving) {
-      return true;
-    }
-  }
-  return false;
-}
-
-RobotExecState Robot::computeExecState() const {
-  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
-    return ROBOT_ERROR;
-  }
-
-  if (_robotState.stop_requested) {
-    return ROBOT_STOPPING;
-  }
-
-  if (isMoving()) {
-    return ROBOT_EXECUTING;
-  }
-
-  if (_robotState.command_completed) {
-    return ROBOT_DONE;
-  }
-  return ROBOT_IDLE;
-}
-
-bool Robot::isBusy() const {
-  switch (_robotState.exec_state) {
-    case ROBOT_IDLE:
-    case ROBOT_DONE:
-      return false;
-
-    case ROBOT_EXECUTING:
-    case ROBOT_STOPPING:
-    case ROBOT_ERROR:
-    default:
-      return true;
-  }
-}
-
-bool Robot::moveJoint(const float target_joint_pose[JOINT_NUM]) {
-  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_JOINT_CONTROL;
-  for (int i = 0; i<JOINT_NUM; i++){
-    _robotState.q_target[i] = target_joint_pose[i];
-  }
-  return true;
-}
-
-void Robot::moveCart(const float target_cart_pose[6]) {
-  _robotState.robot_motion_control_paradigm = robot_motion_control_paradigm_t::ROBOT_CART_CONTROL;
-  for (int i = 0; i<6; i++){
-    _robotState.x_target[i] = target_cart_pose[i];
-  }
-}
-
+// ----------- Kinematics -----------
 void Robot::computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM+1]) {
   T[0] = getIdentityMatrix();
 
@@ -361,93 +432,9 @@ Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]) {
 
     return err;
 }
+// ----------- Kinematics END -----------
 
-bool Robot::acceptCommand(const RobotCommand& cmd) {
-  // accept command only if not in error state
-  if (_robotState.robot_error_state != robot_error_state_t::NO_ERROR) {
-    return false;
-  }
-  
-  switch (cmd.type){
-
-    case RobotCommandType::SET_MAX_JOINT_SPEEDS:
-      setMaxJointSpeed(cmd.q);
-      _robotState.command_completed = true;
-      return true;
-
-    case RobotCommandType::SET_MAX_JOINT_ACCELERATIONS:
-      setMaxJointAcceleration(cmd.q);
-      _robotState.command_completed = true;
-      return true;
-
-    case RobotCommandType::CONTROL_PARADIGM_CHANGE:
-      setMotionControlParadigm(static_cast<robot_motion_control_paradigm_t>(cmd.id_int));
-      _robotState.command_completed = true;
-      return true;
-
-    case RobotCommandType::JOINT_MOVE:
-      if (_robotState.command_active || isMoving()) {
-        return false;
-      }
-      _robotState.command_completed = false;
-      _robotState.stop_requested = false;
-      moveJoint(cmd.q);
-      return true;
-
-    case RobotCommandType::CART_MOVE:
-      if (_robotState.command_active || isMoving()) {
-        return false;
-      }
-      _robotState.command_completed = false;
-      _robotState.stop_requested = false;
-      moveCart(cmd.x);
-      return true;
-
-    case RobotCommandType::UPDATE_FROM_ENCODERS:
-    {
-      if (_robotState.command_active || isMoving()) {
-        return false;
-      }
-      float temp_q_rad[JOINT_NUM];
-
-      for (uint8_t i=0; i<JOINT_NUM; i++){
-        if (i == 0){
-          temp_q_rad[i] = _robotState.q[i];
-          continue;
-        }
-        temp_q_rad[i] = cmd.q[i];
-      }
-
-      setJointAngles(temp_q_rad);
-      _robotState.command_completed = true;
-      return true;
-    }
-
-    case RobotCommandType::START_HOMING:
-      if (_robotState.command_active || isMoving()) {
-        return false;
-      }
-
-      startHoming();
-
-      return true;
-
-    default:
-      return false;
-  }
-    
-}
-
-bool Robot::goToZero() {
-  if (!_robotState.all_homed) return false;
-  return moveJoint(ZERO_POSE_RAD);
-}
-
-bool Robot::goToReady() {
-  if (!_robotState.all_homed) return false;
-  return moveJoint(READY_POSE_RAD);
-}
-
+// ----------- Homing functionality -----------
 bool Robot::startHoming() {
   // If we cant home return
   if (isBusy() || _homingStatus.active) return false;
@@ -567,6 +554,7 @@ void Robot::updateHoming(){
     break;
   }
 }
+// ----------- Homing functionality END-----------
 
 // ----------- Getters -----------
 const RobotState Robot::getState(){
@@ -580,6 +568,7 @@ const float* Robot::getMaxJointSpeed() {
 const float* Robot::getMaxJointAcceleration() {
   return _robotConfig.max_joint_accelerations;
 }
+// ----------- Getters END -----------
 
 // ----------- Setters -----------
 void Robot::setJointAngles(const float q[JOINT_NUM]){
@@ -607,12 +596,35 @@ void Robot::setMaxJointAcceleration(const float max_accel[JOINT_NUM]) {
 void Robot::setMotionControlParadigm(robot_motion_control_paradigm_t motion_control_paradigm) {
   _robotState.robot_motion_control_paradigm = motion_control_paradigm;
 }
+// ----------- Setters END -----------
 
-void Robot::updateEndSwitches() {
-  _robotState.limits_min[0] = digitalRead(_joint_end_switch_min);
-  _robotState.limits_max[0] = digitalRead(_joint_end_switch_max);
+// ----------- Helpers -----------
+float Robot::getDeltaTimeSec() {
+    const uint32_t now = micros();
+    _robotState.timestamp = now;
+
+    const float dt = (now - last_time) * 1e-6f;
+    last_time = now;
+    return dt;
 }
 
+void Robot::writePoseToState(Matrix4x4 T_EE) {
+  _robotState.T_EE = T_EE;
+
+  _robotState.x[0] = T_EE.m[0][3];
+  _robotState.x[1] = T_EE.m[1][3];
+  _robotState.x[2] = T_EE.m[2][3];
+
+  const Matrix3x3 rot = getRotationMatrixFromPoseMatrix(T_EE);
+  const Vect3f eul = rotationMatrixToEulerAngles(rot);
+
+  _robotState.x[3] = eul.v[0];
+  _robotState.x[4] = eul.v[1];
+  _robotState.x[5] = eul.v[2];
+}
+// ----------- Helpers END -----------
+
+// ----------- Non class function -----------
 void sharedWriteRobotState(const RobotState &rs) {
     static uint32_t update_counter = 0;
 
@@ -640,3 +652,4 @@ void sharedWriteRobotState(const RobotState &rs) {
 
     g_robot_shared_state = snap;
 }
+// ----------- Non class function END -----------
