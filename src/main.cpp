@@ -14,6 +14,7 @@ void printRobotState(void);
 
 void robotUpdateTask( void *pvParameters);
 void IOUpdateTask( void *pv_parameters);
+void nodeUpdateTask( void *pv_parameters);
 void printTask( void *pvParameters );
 void displayUpdateTask( void *pvParameters );
 
@@ -31,7 +32,7 @@ void setup() {
   robot.init();
   robot.enable();
 
-  xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 1, nullptr);
+  xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 5, nullptr);
 }
 
 // ---------------------
@@ -41,17 +42,17 @@ void setup1() {
   pinMode(BLUE_LED, OUTPUT);
   
   Wire.begin();
-  Wire.setClock(100000);
+  Wire.setClock(400000);
   
   // Set the serial baudrate
   com.begin(SERIAL_BAUDRATE);
   nodes.begin(RS485_BAUDRATE);             // starts Serial1 for RS485
   display.init();
 
-  xTaskCreate(nodeUpdateTask, "nodeUpdateTask", 4096, nullptr, 2, nullptr);
+  xTaskCreate(nodeUpdateTask, "nodeUpdateTask", 4096, nullptr, 4, nullptr);
   xTaskCreate(IOUpdateTask, "IOUpdateTask", 4096, nullptr, 3, nullptr);
-  xTaskCreate(printTask, "printTask", 8192, nullptr, 4, nullptr);
-  xTaskCreate(displayUpdateTask, "displayUpdateTask", 8192, nullptr, 5, nullptr);
+  xTaskCreate(printTask, "printTask", 4096, nullptr, 2, nullptr);
+  xTaskCreate(displayUpdateTask, "displayUpdateTask", 4096, nullptr, 1, nullptr);
 }
 
 // ---------------------
@@ -202,8 +203,8 @@ void nodeUpdateTask(void *pv_parameters) {
 
   for (;;) {
     nodes.update();             // non-blocking, call every loop, no delay() anywhere
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // ---------------------
