@@ -22,6 +22,7 @@ enum RobotExecState {
 enum class HomingPhase : uint8_t {
   IDLE,
   SEEK_SWITCH_DIR_MIN,  // joint 0 only: drive toward MIN end switch
+  BACKOFF_SWITCH_DIR_MIN,
   SEEK_SWITCH_DIR_MAX,  // joint 0 only: drive toward MAX end switch
   BACKOFF,            // joint 0 only: back off switch to repeatable zero
   READ_ENCODER,       // joints 1-5: instantaneous, no motion needed

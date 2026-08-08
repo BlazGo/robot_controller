@@ -116,6 +116,11 @@ void Robot::updateJointStates() {
     _robotState.q[i] = _robotState.joints[i].angle_rad;
     _robotState.q_dot[i] = _robotState.joints[i].angle_vel_rad_s;
 
+    // During homing we might be outside of boundaries
+    if (_homingStatus.active){
+      continue;
+    }
+
     if (_robotState.joints[i].at_min_lim) {
       _robotState.robot_error_state = robot_error_state_t::LIMIT_HIT_MIN;
     } else if (_robotState.joints[i].at_max_lim) {
@@ -498,16 +503,18 @@ void Robot::updateHoming(){
       const float traveled_rad = fabsf(_robotState.q[joint_idx] - _homingStatus.phase_start_q_rad);
       
       if (joint.getState().at_min_lim) {
-        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
-        _homingStatus.phase = HomingPhase::BACKOFF;
-        _homingStatus.phase_start_time_us = micros();
+        joint.setCurrentAngle(JOINT_0_HOME_MIN_ANGLE_RAD);
+        _robotState.q[joint_idx] = JOINT_0_HOME_MIN_ANGLE_RAD; // freeze in place
+        _robotState.q_target[joint_idx] = JOINT_0_HOME_MIN_ANGLE_RAD; // freeze in place
+        _homingStatus.phase = HomingPhase::SEEK_SWITCH_DIR_MAX;
+        _homingStatus.phase_start_q_rad = JOINT_0_HOME_MIN_ANGLE_RAD;
         break;
       }
 
-      if (traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) {
-        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
-        _homingStatus.phase = HomingPhase::SEEK_SWITCH_DIR_MAX;
-        _homingStatus.phase_start_q_rad = _robotState.q[joint_idx];
+      if ((traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) || joint.getState().at_max_lim) {
+        _homingStatus.phase = HomingPhase::ERROR;
+        _robotState.q[joint_idx] = _robotState.q[joint_idx]; // freeze in place
+        _robotState.q_target[joint_idx] = _robotState.q_target[joint_idx]; // freeze in place
       }
     break;
     }
@@ -518,37 +525,37 @@ void Robot::updateHoming(){
       const float traveled_rad = fabsf(_robotState.q[joint_idx] - _homingStatus.phase_start_q_rad);
       
       if (joint.getState().at_max_lim) {
-        _robotState.q_target[joint_idx] = _robotState.q[joint_idx]; // freeze in place
-        _homingStatus.phase = HomingPhase::BACKOFF;
-        _homingStatus.phase_start_time_us = micros();
+        const float midpoint_rad = (JOINT_0_HOME_MIN_ANGLE_RAD + _robotState.q[joint_idx]) / 2.0f;
+        joint.setCurrentAngle(midpoint_rad);
+        _robotState.q[joint_idx] = midpoint_rad;
+        _robotState.q_target[joint_idx] = midpoint_rad;
+        advanceHomingSequence();
         break;
       }
 
-      if (traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) {
+      if ((traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) || joint.getState().at_min_lim) {
         _homingStatus.phase = HomingPhase::ERROR; // switch never triggered — wiring/config fault
+        _robotState.q[joint_idx] = _robotState.q[joint_idx]; // freeze in place
+        _robotState.q_target[joint_idx] = _robotState.q_target[joint_idx]; // freeze in place}
       }
     break;
     }
 
-    case HomingPhase::BACKOFF:
-      _robotState.q_target[joint_idx] = _robotState.q[joint_idx] + HOMING_BACKOFF_TARGET_RAD; // small offset away from switch
-      
-      if (fabsf(_robotState.q[joint_idx] - (_robotState.q_target[joint_idx])) < kAngleRadPositionTolerance || (micros() - _homingStatus.phase_start_time_us) > HOMING_BACKOFF_TIMEOUT_US) {
-        joint.setCurrentAngle(JOINT_0_HOME_ANGLE_RAD);
-        _robotState.q[joint_idx] = JOINT_0_HOME_ANGLE_RAD;
-        _robotState.q_target[joint_idx] = JOINT_0_HOME_ANGLE_RAD;
-        advanceHomingSequence();
-      }   
-    break;
+    case HomingPhase::READ_ENCODER: {
+      // TODO: replace with actual magnetic encoder read (e.g. I2C/SPI driver call)
+      constexpr float ENCODER_READ_PLACEHOLDER_RAD = 0.0f;
+      const float encoder_angle_rad = ENCODER_READ_PLACEHOLDER_RAD;
 
-    case HomingPhase::READ_ENCODER:
-      angle = 0.0f;
-      _robotState.q_target[joint_idx] = 0.0f;
+      _robotState.q_encoders[joint_idx] = encoder_angle_rad;
+      //joint.setCurrentAngle(encoder_angle_rad);
+      //_robotState.q[joint_idx] = encoder_angle_rad;
+      _robotState.q_target[joint_idx] = ZERO_POSE_RAD[joint_idx];
       
-      if (fabsf(_robotState.q_target[joint_idx] - _robotState.q[joint_idx]) < kAngleRadPositionTolerance) {
+      if (fabsf(_robotState.q[joint_idx] - _robotState.q_target[joint_idx]) < kAngleRadPositionTolerance) {
         advanceHomingSequence();
       }
     break;
+    }
   
     case HomingPhase::DONE:
       _homingStatus.active = false;

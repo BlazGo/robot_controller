@@ -148,8 +148,12 @@ const float MAX_ANGLES[JOINT_NUM] = {
   MAX_ANGLE_5
 };
 
+// ─────────────────────────────────────────────────────────────
 constexpr float ZERO_POSE_RAD[JOINT_NUM]  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 constexpr float READY_POSE_RAD[JOINT_NUM] = {0.0f, 0.0f, 0.0f, 0.0f, PI/2, 0.0f}; 
+
+constexpr float JOINT_0_HOME_MIN_ANGLE_RAD = -133.5f * DEG_TO_RAD; // switch A position relative to true 0
+constexpr float JOINT_0_HOME_MAX_ANGLE_RAD = +133.5f * DEG_TO_RAD; // switch B position relative to true 0
 
 // Homing parameters for end switches joints (only joint_0)
 constexpr float HOMING_BACKOFF_TARGET_RAD = 0.15f; // small offset off the switch
@@ -159,6 +163,7 @@ constexpr float JOINT_0_HOME_ANGLE_RAD = 0.65f;
 constexpr float JOINT_0_FULL_RANGE_RAD = MAX_ANGLE_0 - MIN_ANGLE_0;
 constexpr float JOINT_0_HOMING_SEEK_TARGET_MIN_RAD = MIN_ANGLE_0 - JOINT_0_FULL_RANGE_RAD;
 constexpr float JOINT_0_HOMING_SEEK_TARGET_MAX_RAD = MAX_ANGLE_0 + JOINT_0_FULL_RANGE_RAD;
+// ─────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────
 //  DEFAULT MOVEMENT  
