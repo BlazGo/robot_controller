@@ -9,7 +9,7 @@
 struct JointAngles {
     float values_rad[JOINT_NUM] = {};
 };
-
+ 
 enum RobotExecState {
     ROBOT_IDLE = 0,
     ROBOT_EXECUTING,

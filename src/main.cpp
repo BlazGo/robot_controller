@@ -155,15 +155,30 @@ void IOUpdateTask(void *pv_parameters) {
         break;
 
         case CMD_SET_CURRENT_JOINT_ANGLES_FROM_ENCODERS:
+        {
           robot_cmd.type = RobotCommandType::UPDATE_FROM_ENCODERS;
 
-          float temp_angles[JOINT_NUM];
-          nodes.getAngles(temp_angles);
+          JointAngles temp_angles = nodes.getAngles();
 
           for (uint8_t param_idx = 0; param_idx < JOINT_NUM; ++param_idx) {
-            robot_cmd.q[param_idx] = temp_angles[param_idx];
+            robot_cmd.q[param_idx] = temp_angles.values_rad[param_idx];
           }
         break;
+        }
+        
+        case CMD_GET_ENCODER_STATE:
+        {
+          JointAngles angles = robot.getLatestEncoderAngles();
+          char reply[128];
+          int len = snprintf(reply, sizeof(reply), "%cENCODER_STATES", START_CHAR);
+          for (uint8_t i = 0; i< JOINT_NUM; i++){
+            len += snprintf(reply + len, sizeof(reply) - len, ", %ld",
+            (long)(angles.values_rad[i] * 1000.0f)); // milliradians
+          }
+          snprintf(reply+ len, sizeof(reply) - len, "%c", END_CHAR);
+          Serial.print(reply);  
+        break;
+        }
 
         case CMD_START_HOMING:
           robot_cmd.type = RobotCommandType::START_HOMING;
