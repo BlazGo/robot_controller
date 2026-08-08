@@ -236,6 +236,7 @@ void printRobotState(void){
           "              %.2f, %.2f, %.2f [rad]\n"
           "x_target:     %.1f, %.1f, %.1f [mm] \n"
           "              %.2f, %.2f, %.2f [rad]\n"
+          "end_switches: %d %d (min, max)\n"
           "exec_state:   %d\n"
           "err_state:    %d\n"
           "mode:         %d (0-Cart, 1-Joint)\n"
@@ -246,6 +247,7 @@ void printRobotState(void){
           rs.q_dot_target[0], rs.q_dot_target[1], rs.q_dot_target[2], rs.q_dot_target[3], rs.q_dot_target[4], rs.q_dot_target[5],
           rs.x[0], rs.x[1], rs.x[2], rs.x[3], rs.x[4], rs.x[5],
           rs.x_target[0], rs.x_target[1], rs.x_target[2], rs.x_target[3], rs.x_target[4], rs.x_target[5],
+          rs.limits_min[0], rs.limits_max[0],
           rs.exec_state,
           rs.robot_error_state,
           rs.robot_motion_control_paradigm,
