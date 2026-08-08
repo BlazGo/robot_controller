@@ -29,12 +29,12 @@ const float ENCODER_OFFSETS[JOINT_NUM] = {
 };
 
 const bool MOTOR_DIR_INVERTED[JOINT_NUM] = {
+  false,
+  true,  
   true,
-  false,  
-  false,
-  false,
-  false,
-  false  
+  true,
+  true,
+  true  
 };
 
  const uint8_t HOMING_JOINT_ORDER[JOINT_NUM] = {1, 2, 3, 4, 5, 0};

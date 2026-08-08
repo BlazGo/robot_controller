@@ -22,12 +22,7 @@ void Motor::initialize() {
 
     _config.stepsPerRevolution = STEPPER_STEPS_PER_REV * static_cast<long>(_config.microsteps);
 
-    if (_config.dir_inverted = false) {
-        _stepper.setPinsInverted(false); 
-    }
-    else {
-        _stepper.setPinsInverted(true); 
-    }
+    _stepper.setPinsInverted(_config.dir_inverted); 
 
     setMaxSpeedSteps(MAX_SPEED_STEPS_PER_S);
     setMaxAccelerationSteps(MAX_ACCELERATION_STEPS_PER_S2);
