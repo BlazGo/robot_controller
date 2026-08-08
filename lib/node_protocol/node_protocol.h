@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "robot_types.h"
+#include <atomic>
 
 #define RS485_TX_PIN   0
 #define RS485_RX_PIN   1
@@ -31,12 +33,12 @@ public:
   float getAngle(uint8_t nodeId) const;             // last known angle, instant
   bool  isAngleValid(uint8_t nodeId) const;         // has this node ever replied?
   unsigned long getAngleAge(uint8_t nodeId) const;  // ms since last update
-  void getAngles(float angles[JOINT_NUM]);
-
+  JointAngles getAngles();
 private:
   void sendReadCommand(uint8_t nodeId);
   bool parseCommand(const char* line, uint8_t expectedNode, float& angle);
   void advanceToNextNode();
+  void publishAngles();
 
   ProtocolState _protocol_state;
   uint8_t _currentNode;
@@ -44,11 +46,16 @@ private:
   char _rx_bufer[MAX_RX_CHAR];
   uint8_t _rx_idx;
 
-  unsigned long _requestSentAt;
+  // Atomic circular buffer for inter core communication
+  JointAngles _angle_buffers[2];
+  std::atomic<uint8_t> _active_buffer_idx{0};
 
-  float _angles[NODE_LAST - NODE_FIRST + 1];
-  unsigned long _angleTimestamp[NODE_LAST - NODE_FIRST + 1];
-  bool _angleValid[NODE_LAST - NODE_FIRST + 1];
+  // Internal arrays to track the angles, age and validity
+  float _angles[JOINT_NUM];
+  unsigned long _angleTimestamp[JOINT_NUM];
+  bool _angleValid[JOINT_NUM];
+ 
+  unsigned long _requestSentAt;
 };
 
 #endif

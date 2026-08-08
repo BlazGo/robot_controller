@@ -7,7 +7,7 @@ NodeProtocol::NodeProtocol() {
   _protocol_state = ProtocolState::IDLE;
   _requestSentAt = 0;
 
-  for (uint8_t i = 0; i < NODE_LAST - NODE_FIRST + 1; i++) {
+  for (uint8_t i = 0; i < JOINT_NUM; i++) {
     _angles[i] = 0.0f;
     _angleTimestamp[i] = 0;
     _angleValid[i] = false;
@@ -22,27 +22,23 @@ void NodeProtocol::begin(uint32_t baudrate) {
 }
 
 float NodeProtocol::getAngle(uint8_t nodeId) const {
-  if (nodeId < NODE_FIRST || nodeId > NODE_LAST) return 0.0f;
-  return _angles[nodeId - NODE_FIRST];
+  if (nodeId <= NODE_FIRST || nodeId >= JOINT_NUM) return 0.0f;
+  return _angles[nodeId];
 }
 
 bool NodeProtocol::isAngleValid(uint8_t nodeId) const {
-  if (nodeId < NODE_FIRST || nodeId > NODE_LAST) return false;
-  return _angleValid[nodeId - NODE_FIRST];
+  if (nodeId <= NODE_FIRST || nodeId >= JOINT_NUM) return 0.0f;
+  return _angleValid[nodeId];
 }
 
 unsigned long NodeProtocol::getAngleAge(uint8_t nodeId) const {
-  if (nodeId < NODE_FIRST || nodeId > NODE_LAST) return 0xFFFFFFFF;
-  return millis() - _angleTimestamp[nodeId - NODE_FIRST];
+  if (nodeId <= NODE_FIRST || nodeId >= JOINT_NUM) return 0xFFFFFFFF;
+  return millis() - _angleTimestamp[nodeId];
 }
 
-void NodeProtocol::getAngles(float angles[JOINT_NUM]){
-  for (uint8_t i=0; i<JOINT_NUM; i++){
-    if (i==0){
-      angles[i] = 0.0f; 
-    }
-    angles[i] = _angles[i-1];
-  }
+JointAngles NodeProtocol::getAngles(){
+  uint8_t read_idx = _active_buffer_idx.load(std::memory_order_acquire);
+  return _angle_buffers[read_idx];
 }
 
 void NodeProtocol::update() {
@@ -99,9 +95,21 @@ void NodeProtocol::update() {
   }
 }
 
+void NodeProtocol::publishAngles(){
+  uint8_t write_idx_u8 = 1 - _active_buffer_idx.load(std::memory_order_relaxed);
+  for (uint8_t i=0; i<JOINT_NUM; i++){
+    _angle_buffers[write_idx_u8].values_rad[i] = _angles[i];
+  }
+  _active_buffer_idx.store(write_idx_u8, std::memory_order_release);
+}
+
+
 void NodeProtocol::advanceToNextNode() {
   _currentNode++;
-  if (_currentNode > NODE_LAST) _currentNode = NODE_FIRST;
+  if (_currentNode > NODE_LAST){
+    _currentNode = NODE_FIRST;
+    publishAngles();
+  }
   _protocol_state = ProtocolState::IDLE;
 }
 
