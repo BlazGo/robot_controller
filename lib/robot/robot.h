@@ -6,6 +6,7 @@
 #include "robot_command_queue.h"
 #include "robot_state_shared.h"
 #include "robot_types.h"
+#include "node_protocol.h"
 
 struct DHParam {
     float theta;
@@ -36,6 +37,9 @@ public:
 
     void enable();
     void disable();
+
+    void attachEncoderNode(NodeProtocol& encoder_node);
+    JointAngles getLatestEncoderAngles();
 
     bool moveJoint(const float target_joint_pose[JOINT_NUM]);
     void moveCart(const float target_cart_pose[6]);
@@ -78,7 +82,6 @@ private:
     void updateJointPlan(float dt);
     void applyPlannedJointSpeeds();
     void writePoseToState(Matrix4x4 T_EE);
-    void updateFromEncoders();
     bool startHoming();
     void updateHoming();
     void advanceHomingSequence();
@@ -97,6 +100,7 @@ private:
     RobotConfig _robotConfig{};
     RobotPlanner _robotPlanner{};
     HomingStatus _homingStatus;
+    NodeProtocol* _encoder_node = nullptr;
 };
 
 void sharedWriteRobotState(const RobotState& rs);

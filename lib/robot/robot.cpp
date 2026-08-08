@@ -35,6 +35,7 @@ Robot::Robot()
     _robotState.q_dot_target[i] = 0.0f;
     _robotPlanner.q_planned[i] = 0.0f;
 
+    _robotState.q_encoders[i] = 0.0f;
     _robotState.limits_min[i] = false;
     _robotState.limits_max[i] = false;
   }
@@ -63,7 +64,6 @@ void Robot::update() {
 
   if (_homingStatus.active) {
     updateHoming();
-    return;
   }
 
   Matrix4x4 transforms[JOINT_NUM + 1];
@@ -84,6 +84,15 @@ void Robot::update() {
   }
   applyPlannedJointSpeeds();
 }
+
+void Robot::attachEncoderNode(NodeProtocol& encoder_node) {
+    _encoder_node = &encoder_node;
+}
+
+JointAngles Robot::getLatestEncoderAngles() {
+  return _encoder_node ? _encoder_node -> getAngles() : JointAngles();
+}
+
 
 void Robot::enable() {
   digitalWrite(_enable_pin_0, LOW);

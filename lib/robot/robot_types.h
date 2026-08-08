@@ -4,6 +4,11 @@
 #include "utils.h"
 #include "config.h"
 #include "joint_types.h"
+#include "robot_commands.h"
+
+struct JointAngles {
+    float values_rad[JOINT_NUM] = {};
+};
 
 enum RobotExecState {
     ROBOT_IDLE = 0,
@@ -63,6 +68,8 @@ struct RobotState{
   float x_dot[6];       // cartesian EE speeds
 
   float x_target[6];    // cartesian target EE pose
+
+  float q_encoders[JOINT_NUM];
 
   bool limits_min[JOINT_NUM];
   bool limits_max[JOINT_NUM];

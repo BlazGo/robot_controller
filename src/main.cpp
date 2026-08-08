@@ -31,7 +31,8 @@ NodeProtocol nodes;
 void setup() {
   robot.init();
   robot.enable();
-
+  delay(100);
+  robot.attachEncoderNode(nodes);
   xTaskCreate(robotUpdateTask, "robotUpdateTask", 4096, nullptr, 5, nullptr);
 }
 
