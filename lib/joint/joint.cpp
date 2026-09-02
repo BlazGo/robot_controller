@@ -27,20 +27,25 @@ Joint::Joint(uint8_t step_pin, uint8_t dir_pin, uint8_t microsteps, float gear_r
 
 void Joint::init() {
   _motor.initialize();
+
+  // In addition to motor steps per revolution now we add the gear ratio
   _jointConfig.motor_steps_per_joint_rev  = _jointConfig.gear_ratio * _motor.getStepsPerRevolution();
+  // This should be DEPRECIATED since we should pretty much always control it via speed
   _jointState.joint_motion_control_paradigm = JOINT_SPEED_CONTROL;
+  // Position tolerance when joint consideres to be at the goal
   _jointConfig.angle_tolerance_rad = 0.005f;
 }
 
 void Joint::update(void) {
-  Joint::updateState();   // Refresh current state
-  Joint::checkLimits();   // Only checks the min and max limits and sets flags
+  Joint::updateState();   // Refresh current state (pos, speed, is moving)
+  Joint::checkLimits();   // Only checks the min and max limits and sets boolean flags
 
   float commanded_angle_vel_rad_s = 0.0f; 
   
   switch (_jointState.joint_motion_control_paradigm)
   {
   case JOINT_SPEED_CONTROL:
+    // basically only clamps it to max speed (if over that)
     commanded_angle_vel_rad_s = computeSpeedControlVelRadS();
     break;
 
@@ -53,8 +58,9 @@ void Joint::update(void) {
     break;
   }
 
-  // We preserve the target speed but we calculate safe speed from it
-  commanded_angle_vel_rad_s = Joint::applyLimitSafetyToVelRadS(commanded_angle_vel_rad_s); // If we are outside of limits we set the speed to 0
+  // Checks if we are outside of limit positions and sets speed to 0 in that case.
+  // TODO: still have to be able to move back into the operating range
+  commanded_angle_vel_rad_s = Joint::applyLimitSafetyToVelRadS(commanded_angle_vel_rad_s);
 
    // Send the desired speed and update motor
   _motor.setTargetSpeedSteps(angleVelRadToStepsPerSec(commanded_angle_vel_rad_s));

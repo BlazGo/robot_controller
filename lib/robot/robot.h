@@ -52,22 +52,18 @@ public:
     bool goToZero();
     bool goToReady();
 
-    const RobotState getState();
-    const float* getMaxJointSpeed();
-    const float* getMaxJointAcceleration();
+    const RobotState getState() const;
+    const float* getMaxJointSpeed() const;
+    const float* getMaxJointAcceleration() const;
 
     bool isBusy() const;
     bool isMoving() const;
     RobotExecState computeExecState() const;
 
-    void computeForwardKinematics(const float (&q)[JOINT_NUM],
-                                  Matrix4x4 (&T)[JOINT_NUM + 1]);
-    void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1],
-                                  Matrix6x6 (&J));
-    void computeDLSMethod(float (&q_dot)[JOINT_NUM],
-                          const Matrix6x6 (&J),
-                          Vect6f x_dot);
-    Vect6f computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]);
+    void computeForwardKinematics(const float (&q)[JOINT_NUM], Matrix4x4 (&T)[JOINT_NUM + 1]);
+    void computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix6x6 (&J));
+    void computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot);
+    Vect6f computeCartErr(const Matrix4x4 (&T_curr), float (&x_goal)[6]);
     float calcTrapTrajBasic(float curr_pos,
                             float curr_vel,
                             float dt,
@@ -88,7 +84,7 @@ private:
     bool isHoming() const;
     void updateEndSwitches();
 
-    uint32_t last_time = 0;
+    uint32_t _last_time = 0;
 
     uint8_t _enable_pin_0;  // Enables joints 0, 1, 2
     uint8_t _enable_pin_1;  // Enables joints 3, 4, 5

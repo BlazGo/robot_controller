@@ -5,6 +5,7 @@ namespace {
 constexpr float kPosGain = 0.9f;
 constexpr float kRotGain = 0.3f;
 constexpr float kDamping = 0.1f;
+constexpr float kDlsLambda = 0.1f;
 }
 
 Robot::Robot()
@@ -53,7 +54,7 @@ void Robot::init() {
   pinMode(_joint_end_switch_max, INPUT_PULLDOWN);
 
   disable();
-  last_time = micros();
+  _last_time = micros();
 }
 
 void Robot::update() {
@@ -90,7 +91,7 @@ void Robot::attachEncoderNode(NodeProtocol& encoder_node) {
 }
 
 JointAngles Robot::getLatestEncoderAngles() {
-  return _encoder_node ? _encoder_node -> getAngles() : JointAngles();
+  return _encoder_node ? _encoder_node->getAngles() : JointAngles();
 }
 
 
@@ -111,6 +112,7 @@ void Robot::updateJointStates() {
 
   for (int i = 0; i < JOINT_NUM; ++i) {
     _joints[i].update();
+
     _robotState.joints[i] = _joints[i].getState();
 
     _robotState.q[i] = _robotState.joints[i].angle_rad;
@@ -205,15 +207,10 @@ bool Robot::acceptCommand(const RobotCommand& cmd) {
       if (_robotState.command_active || isMoving()) {
         return false;
       }
-      float temp_q_rad[JOINT_NUM];
 
-      for (uint8_t i=0; i<JOINT_NUM; i++){
-        if (i == 0){
-          temp_q_rad[i] = _robotState.q[i];
-          continue;
-        }
-        temp_q_rad[i] = cmd.q[i];
-      }
+      float temp_q_rad[JOINT_NUM];
+      for (uint8_t i = 0; i < JOINT_NUM; i++) temp_q_rad[i] = cmd.q[i];
+      temp_q_rad[0] = _robotState.q[0]; // joint 0 uses end-switch homing, not encoder
 
       setJointAngles(temp_q_rad);
       _robotState.command_completed = true;
@@ -403,13 +400,11 @@ void Robot::computeGeometricJacobian(const Matrix4x4 (&T)[JOINT_NUM + 1], Matrix
 }
 
 void Robot::computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Vect6f x_dot){
-  float lambda = 0.1f;
-
   Matrix6x6 J_T = transposeMat(J);
   Matrix6x6 JJ_T = multiplyMatrices(J, J_T);
 
   for (int i=0; i<6; i++){
-    JJ_T.m[i][i] += lambda*lambda;
+    JJ_T.m[i][i] += kDlsLambda*kDlsLambda;
   }
 
   Matrix6x6 JJ_T_lambda_inv = invertMatrix(JJ_T);
@@ -429,7 +424,7 @@ void Robot::computeDLSMethod(float (&q_dot)[JOINT_NUM], const Matrix6x6 (&J), Ve
   }
 }
 
-Vect6f Robot::computeCartErr(const Matrix4x4 T_curr, float (&x_goal)[6]) {
+Vect6f Robot::computeCartErr(const Matrix4x4 (&T_curr), float (&x_goal)[6]) {
     Vect6f err{};
 
     for (int i = 0; i < 3; ++i) {
@@ -489,6 +484,7 @@ void Robot::updateHoming(){
   // Check if we're out of bounds (we're done)
   if (_homingStatus.order_idx >= JOINT_NUM) {
     _homingStatus.phase = HomingPhase::DONE;
+    return;
   }
 
   // Select the current joint
@@ -513,8 +509,6 @@ void Robot::updateHoming(){
 
       if ((traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) || joint.getState().at_max_lim) {
         _homingStatus.phase = HomingPhase::ERROR;
-        _robotState.q[joint_idx] = _robotState.q[joint_idx]; // freeze in place
-        _robotState.q_target[joint_idx] = _robotState.q_target[joint_idx]; // freeze in place
       }
     break;
     }
@@ -535,8 +529,6 @@ void Robot::updateHoming(){
 
       if ((traveled_rad > JOINT_0_FULL_RANGE_RAD + HOMING_SEARCH_MARGIN_RAD) || joint.getState().at_min_lim) {
         _homingStatus.phase = HomingPhase::ERROR; // switch never triggered — wiring/config fault
-        _robotState.q[joint_idx] = _robotState.q[joint_idx]; // freeze in place
-        _robotState.q_target[joint_idx] = _robotState.q_target[joint_idx]; // freeze in place}
       }
     break;
     }
@@ -559,6 +551,7 @@ void Robot::updateHoming(){
   
     case HomingPhase::DONE:
       _homingStatus.active = false;
+      _robotState.all_homed = true;
     break;
 
     case HomingPhase::ERROR:
@@ -573,15 +566,15 @@ void Robot::updateHoming(){
 // ----------- Homing functionality END-----------
 
 // ----------- Getters -----------
-const RobotState Robot::getState(){
+const RobotState Robot::getState() const {
   return _robotState;
 }
 
-const float* Robot::getMaxJointSpeed() {
+const float* Robot::getMaxJointSpeed() const {
   return _robotConfig.max_joint_speeds;
 }
 
-const float* Robot::getMaxJointAcceleration() {
+const float* Robot::getMaxJointAcceleration() const {
   return _robotConfig.max_joint_accelerations;
 }
 // ----------- Getters END -----------
@@ -619,8 +612,8 @@ float Robot::getDeltaTimeSec() {
     const uint32_t now = micros();
     _robotState.timestamp = now;
 
-    const float dt = (now - last_time) * 1e-6f;
-    last_time = now;
+    const float dt = (now - _last_time) * 1e-6f;
+    _last_time = now;
     return dt;
 }
 

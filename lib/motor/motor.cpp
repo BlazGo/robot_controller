@@ -20,8 +20,11 @@ void Motor::initialize() {
     _state.targetSpeedSteps = _state.currentSpeedSteps;
     _state.isMoving = _stepper.isRunning();
 
+    // Sets the steps needed to make one revolution 
     _config.stepsPerRevolution = STEPPER_STEPS_PER_REV * static_cast<long>(_config.microsteps);
-
+    // Set the direction of the motor to spin
+    // (depends on state of dir pin AND how we constructed individual joints ->
+    // motor turned forward or backward in relation to robot orientation etc.)
     _stepper.setPinsInverted(_config.dir_inverted); 
 
     setMaxSpeedSteps(MAX_SPEED_STEPS_PER_S);
@@ -35,9 +38,11 @@ void Motor::update() {
     const uint32_t deltaTimeUs = nowUs - _lastUpdateUs;
     _lastUpdateUs = nowUs;
 
+    // Use last update time to check if we are accelerating too fast
     float deltaTimeSeconds = static_cast<float>(deltaTimeUs) * 1.0e-6f;
     deltaTimeSeconds = clampAbsFloat(deltaTimeSeconds, 0.001f);
 
+    // Calculate max settable speed and clamp it
     float maxSpeedDelta = _config.maxAccelerationSteps * deltaTimeSeconds;
     _state.currentSpeedSteps = moveTowards(
         _state.currentSpeedSteps,

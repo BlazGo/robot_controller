@@ -56,7 +56,7 @@ struct RobotPlanner{
 };
 
 struct RobotState{
-  JointState joints[JOINT_NUM];   // array of individual joint states (maybe not needed?)
+  JointState joints[JOINT_NUM];   // array of individual joint states NOT ACTUAL JOINT OBJECTS (maybe not needed?)
 
   float q[JOINT_NUM];       // joint angles - q
   float q_dot[JOINT_NUM];   // joint speeds - q_dot
